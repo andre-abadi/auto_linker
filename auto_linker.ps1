@@ -1,7 +1,7 @@
 <#
 This script:
 - Processes a single Excel file in the current directory
-- Searches Documents/Evidence folder for corresponding files
+- Searches for a single folder containing corresponding files
 - Detects Document ID column in first 3 rows of each worksheet
 - Creates hyperlinks between Document IDs and their files
 - Displays progress for long-running operations
@@ -9,10 +9,30 @@ This script:
 - Reports total execution time and hyperlinks created
 #>
 
-$scriptStartTime = Get-Date
+<#
+Changes:
+- V11
+  - Folder agnostic, no name requirement just that there's only one.
+  - Document ID columns can have words after Document ID and still be included.
+  - Declare column header in case of changing away from Document ID.
+  - Add transcript logging.
+#>
 
-# Set the interval for progress callouts (number of items between status updates)
-$callout_interval = 1000
+#
+# Start Global Variables
+#
+# write-host for every x files enumerated and links created
+$max_callout = 5000 
+# string to look for to link
+$hyperlink_column_header = "Document ID"
+# set true to show Excel while running
+$excel_visible = $false
+#
+# End Global Variables
+#
+
+$scriptStartTime = Get-Date
+Start-Transcript -Path ("auto_linker_log_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".log")  | Out-Null
 
 # Load the necessary assemblies for Excel automation
 Add-Type -AssemblyName Microsoft.Office.Interop.Excel
@@ -24,38 +44,41 @@ $CurrentDir = (Get-Location).Path
 $ExcelFiles = Get-ChildItem -Path $CurrentDir -Filter *.xlsx
 
 if ($ExcelFiles.Count -ne 1) {
-    Write-Error "There should be exactly one Excel file in the current directory."
+    Write-Error "Exiting because there should be exactly one Excel file in the current directory and this condition was not met."
     exit 1
 }
 
 $ExcelFilePath = $ExcelFiles[0].FullName
 
-# Find the 'Documents' or 'Evidence' folder
-$DocFolder = Join-Path $CurrentDir 'Documents'
-if (-not (Test-Path $DocFolder)) {
-    $DocFolder = Join-Path $CurrentDir 'Evidence'
-    if (-not (Test-Path $DocFolder)) {
-        Write-Error "Neither 'Documents' nor 'Evidence' folder was found in the current directory."
-        exit 1
-    }
+# Find the single subfolder in the current directory
+$Folders = Get-ChildItem -Path $CurrentDir -Directory
+if ($Folders.Count -ne 1) {
+    Write-Error "Exiting because there should be exactly one folder in the current directory and this condition was not met."
+    exit 1
 }
+$DocFolder = $Folders[0].FullName
 
 $enumStart = Get-Date
 
+$TotalFiles = (Get-ChildItem -Path $DocFolder -File | Measure-Object).Count
+$callout_interval = [Math]::Min([Math]::Round(($TotalFiles/10)/100) * 100, $max_callout)
+
 # Get all files in the document folder
-Write-Host "Enumerating files in '$($DocFolder)'..."
+Write-Host "`nEnumerating files in '$(Split-Path $DocFolder -Leaf)'."
 $Files = Get-ChildItem -Path $DocFolder -File
 
 $TotalFiles = $Files.Count
 $FileCounter = 0
 
-# Create a hashtable for quick lookup of files by Document ID
+# Create a hashtable for quick lookup of files by identifier
 $FileLookup = @{}
 $DuplicateFileLookup = @{} # Create duplicate file listing
 foreach ($File in $Files) {
     $FileCounter++
     if ($FileCounter % $callout_interval -eq 0) {
-        Write-Host "$FileCounter of $TotalFiles files enumerated..."
+        Write-Host "    $FileCounter files enumerated."
+        [System.GC]::Collect()
+        [System.GC]::WaitForPendingFinalizers()
     }
 
     # Extract the filename without extension
@@ -64,15 +87,18 @@ foreach ($File in $Files) {
         $FileLookup[$DocID] = $File.Name
         $DuplicateFileLookup[$DocID] = $File.Name # Populate duplicate structure
     } else {
-        Write-Error "Multiple files found with the Document ID: $DocID"
+        Write-Error "Exiting because multiple files found with the identifier: $DocID"
         exit 1
     }
 }
-
-Write-Host "File enumeration completed. Total files found: $TotalFiles"
-
+Write-Host "    File enumeration completed."
 $enumDuration = (Get-Date) - $enumStart
-Write-Host "File enumeration took: $($enumDuration.ToString('hh\:mm\:ss'))"
+Write-Host "    File enumeration took: $($enumDuration.ToString('hh\:mm\:ss'))"
+Write-Host "    " -NoNewline
+Write-Host $TotalFiles -ForegroundColor Green -NoNewline
+Write-Host " referrable files found."
+
+
 
 # Prepare hashtables for missing and extra files
 $LinkedDocIDs = @{}
@@ -81,11 +107,13 @@ $TotalHyperlinksAdded = 0  # Initialize total hyperlinks counter
 
 # Open Excel application
 $Excel = New-Object -ComObject Excel.Application
-$Excel.Visible = $true
+$Excel.Visible = $excel_visible
 $Excel.DisplayAlerts = $false
+$Excel.ScreenUpdating = $false
+$Excel.EnableAnimations = $false
 
 # Open the Excel workbook
-Write-Host "Opening Excel File"
+Write-Host "`nOpening Excel File"
 $Workbook = $Excel.Workbooks.Open($ExcelFilePath)
 
 try {
@@ -95,9 +123,11 @@ try {
     # Iterate through each worksheet using a for loop
     for ($w = 1; $w -le $WorksheetCount; $w++) {
         $Worksheet = $Workbook.Worksheets.Item($w)
-        Write-Host "Processing worksheet: '$($Worksheet.Name)'"
-
-        # Find the 'Document ID' column in the first three rows
+        #Write-Host "    Processing worksheet: '$($Worksheet.Name)'"
+        Write-Host "    " -NoNewline
+        Write-Host $Worksheet.Name -ForegroundColor Magenta -NoNewline
+        Write-Host " worksheet found."
+        # Find the identifier column in the first three rows
         $DocIDColumn = $null
         $HeaderRow = $null  # Track which row contains the header
         $FoundHeader = $false
@@ -111,7 +141,7 @@ try {
             $ColumnCount = $Columns.Count
             for ($Col = 1; $Col -le $ColumnCount; $Col++) {
                 $Cell = $Columns.Item($Col)
-                if ($Cell.Text -match '^\s*Document ID\s*$') {
+                if ($Cell.Text -match "^\s*$DOCUMENT_ID_HEADER\b") {
                     $DocIDColumn = $Cell.Column
                     $HeaderRow = $Row    # Store which row contains the header
                     $FoundHeader = $true
@@ -139,14 +169,14 @@ try {
         }
 
         if (-not $DocIDColumn) {
-            Write-Host "No 'Document ID' column found in worksheet '$($Worksheet.Name)'. Skipping..."
+            Write-Host "    No identifier column found in worksheet '$($Worksheet.Name)'. Skipping."
             # Release $Worksheet
             [System.Runtime.InteropServices.Marshal]::ReleaseComObject($Worksheet) | Out-Null
             $Worksheet = $null
             continue
         }
 
-        Write-Host "Starting hyperlinking in worksheet '$($Worksheet.Name)'"
+        Write-Host "    Starting hyperlinking."
 
         # Get the used range starting from the row after the header
         $UsedRange = $Worksheet.UsedRange
@@ -167,10 +197,13 @@ try {
                     $LinkedDocIDs[$DocID] = $true
                     $DuplicateFileLookup.Remove($DocID) # Remove file from duplicate structure
                     if ($LinkCounter % $callout_interval -eq 0) {
-                        Write-Host "$LinkCounter hyperlinks created"
+                        Write-Host "    $LinkCounter hyperlinks created."
+                        # garbage collection
+                        [System.GC]::Collect()
+                        [System.GC]::WaitForPendingFinalizers()
                     }
                 } else {
-                    # Document ID found but no corresponding file
+                    # Identifier found but no corresponding file
                     $MissingFiles.Add($DocID) | Out-Null
                 }
             }
@@ -179,7 +212,11 @@ try {
             $Cell = $null
         }
 
-        Write-Host "Finished hyperlinking in worksheet '$($Worksheet.Name)'. Total hyperlinks created: $LinkCounter"
+
+        Write-Host "    Finished hyperlinking."
+        Write-Host "    " -NoNewline
+        Write-Host $LinkCounter -ForegroundColor Green -NoNewline
+        Write-Host " hyperlinks created."
 
         # Release COM objects after worksheet processing
         [System.Runtime.InteropServices.Marshal]::ReleaseComObject($UsedRange) | Out-Null
@@ -209,8 +246,13 @@ finally {
     # Force garbage collection
     [System.GC]::Collect()
     [System.GC]::WaitForPendingFinalizers()
+
+    Write-Host "Workbook closed.`n"
 }
 
+# Add line break and total hyperlinks summary before errata handling
+Write-Host "Total hyperlinks created across all worksheets: " -NoNewline
+Write-Host $TotalHyperlinksAdded -ForegroundColor Green
 
 
 if ($DuplicateFileLookup.Keys.Count -gt 0 -or $MissingFiles.Count -gt 0) {
@@ -221,7 +263,7 @@ if ($DuplicateFileLookup.Keys.Count -gt 0 -or $MissingFiles.Count -gt 0) {
     if ($DuplicateFileLookup.Keys.Count -gt 0) {
         Add-Content -Path $ErrataFilePath -Value "Extraneous Files:"
         foreach ($ExtraFile in $DuplicateFileLookup.Keys) {
-            Add-Content -Path $ErrataFilePath -Value "File: $($DuplicateFileLookup[$ExtraFile])"
+            Add-Content -Path $ErrataFilePath -Value $DuplicateFileLookup[$ExtraFile]
         }
     }
     
@@ -229,22 +271,24 @@ if ($DuplicateFileLookup.Keys.Count -gt 0 -or $MissingFiles.Count -gt 0) {
     if ($MissingFiles.Count -gt 0) {
         Add-Content -Path $ErrataFilePath -Value "`nMissing Files:"
         foreach ($MissingFile in $MissingFiles) {
-            Add-Content -Path $ErrataFilePath -Value "Document ID: $MissingFile"
+            Add-Content -Path $ErrataFilePath -Value $MissingFile
         }
     }
     
     # Output confirmation message to console
     Write-Host "Errata saved to $ErrataFilePath"
 } else {
-    Write-Host "No errata file needed - all Document IDs were processed successfully!"
+    Write-Host "No errata file needed - all identifiers were processed successfully!"
 }
 
-# Add line break and total hyperlinks summary before errata handling
-Write-Host "`nTotal hyperlinks created across all worksheets: $TotalHyperlinksAdded"
+
 
 $scriptDuration = (Get-Date) - $scriptStartTime
-Write-Host "`nTotal execution time: $($scriptDuration.ToString('hh\:mm\:ss'))"
+Write-Host "Total execution time: $($scriptDuration.ToString('hh\:mm\:ss'))`n"
+
+# Stop logging
+Stop-Transcript | Out-Null
 
 # Pause before exit
-Write-Host "Press ENTER to exit..."
+Write-Host "Press ENTER to exit."
 $null = Read-Host
