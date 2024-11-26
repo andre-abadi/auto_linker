@@ -1,5 +1,8 @@
 # PowerShell v4 Script to Hyperlink Document IDs in Excel with Progress Updates and Errata Logging
 
+# Set the interval for progress callouts (number of items between status updates)
+$callout_interval = 1000
+
 # Load the necessary assemblies for Excel automation
 Add-Type -AssemblyName Microsoft.Office.Interop.Excel
 
@@ -38,7 +41,7 @@ $FileLookup = @{}
 $DuplicateFileLookup = @{} # Create duplicate file listing
 foreach ($File in $Files) {
     $FileCounter++
-    if ($FileCounter % 5000 -eq 0) {
+    if ($FileCounter % $callout_interval -eq 0) {
         Write-Host "$FileCounter of $TotalFiles files enumerated..."
     }
 
@@ -125,7 +128,7 @@ try {
             continue
         }
 
-        Write-Host "Starting hyperlinking in worksheet '$($Worksheet.Name)'..."
+        Write-Host "Starting hyperlinking in worksheet '$($Worksheet.Name)'"
 
         # Get the used range starting from the row after headers
         $UsedRange = $Worksheet.UsedRange
@@ -145,8 +148,8 @@ try {
                     $TotalHyperlinksAdded++
                     $LinkedDocIDs[$DocID] = $true
                     $DuplicateFileLookup.Remove($DocID) # Remove file from duplicate structure
-                    if ($LinkCounter % 5000 -eq 0) {
-                        Write-Host "$LinkCounter hyperlinks created in worksheet '$($Worksheet.Name)'..."
+                    if ($LinkCounter % $callout_interval -eq 0) {
+                        Write-Host "$LinkCounter hyperlinks created"
                     }
                 } else {
                     # Document ID found but no corresponding file
@@ -190,19 +193,26 @@ finally {
     [System.GC]::WaitForPendingFinalizers()
 }
 
-# Create errata file with timestamp
-$ErrataFilePath = Join-Path $CurrentDir ("errata_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
-
-# Output extraneous files and missing Document IDs to errata file
-Add-Content -Path $ErrataFilePath -Value "Extraneous Files:"
-foreach ($ExtraFile in $DuplicateFileLookup.Keys) {
-    Add-Content -Path $ErrataFilePath -Value "File: $($DuplicateFileLookup[$ExtraFile])"
+if ($DuplicateFileLookup.Keys.Count -gt 0 -or $MissingFiles.Count -gt 0) {
+    # Create errata file with timestamp
+    $ErrataFilePath = Join-Path $CurrentDir ("errata_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
+    
+    # Output extraneous files if they exist
+    if ($DuplicateFileLookup.Keys.Count -gt 0) {
+        Add-Content -Path $ErrataFilePath -Value "Extraneous Files:"
+        foreach ($ExtraFile in $DuplicateFileLookup.Keys) {
+            Add-Content -Path $ErrataFilePath -Value "File: $($DuplicateFileLookup[$ExtraFile])"
+        }
+    }
+    
+    # Output missing files if they exist
+    if ($MissingFiles.Count -gt 0) {
+        Add-Content -Path $ErrataFilePath -Value "`nMissing Files:"
+        foreach ($MissingFile in $MissingFiles) {
+            Add-Content -Path $ErrataFilePath -Value "Document ID: $MissingFile"
+        }
+    }
+    
+    # Output confirmation message to console
+    Write-Host "Errata saved to $ErrataFilePath"
 }
-
-Add-Content -Path $ErrataFilePath -Value "`nMissing Files:"
-foreach ($MissingFile in $MissingFiles) {
-    Add-Content -Path $ErrataFilePath -Value "Document ID: $MissingFile"
-}
-
-# Output confirmation message to console
-Write-Host "Errata saved to $ErrataFilePath"
