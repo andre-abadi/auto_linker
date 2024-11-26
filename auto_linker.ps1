@@ -1,4 +1,15 @@
-# PowerShell v4 Script to Hyperlink Document IDs in Excel with Progress Updates and Errata Logging
+<#
+This script:
+- Processes a single Excel file in the current directory
+- Searches Documents/Evidence folder for corresponding files
+- Detects Document ID column in first 3 rows of each worksheet
+- Creates hyperlinks between Document IDs and their files
+- Displays progress for long-running operations
+- Generates errata file listing missing/extra documents
+- Reports total execution time and hyperlinks created
+#>
+
+$scriptStartTime = Get-Date
 
 # Set the interval for progress callouts (number of items between status updates)
 $callout_interval = 1000
@@ -29,6 +40,8 @@ if (-not (Test-Path $DocFolder)) {
     }
 }
 
+$enumStart = Get-Date
+
 # Get all files in the document folder
 Write-Host "Enumerating files in '$($DocFolder)'..."
 $Files = Get-ChildItem -Path $DocFolder -File
@@ -58,6 +71,9 @@ foreach ($File in $Files) {
 
 Write-Host "File enumeration completed. Total files found: $TotalFiles"
 
+$enumDuration = (Get-Date) - $enumStart
+Write-Host "File enumeration took: $($enumDuration.ToString('hh\:mm\:ss'))"
+
 # Prepare hashtables for missing and extra files
 $LinkedDocIDs = @{}
 $MissingFiles = New-Object System.Collections.Generic.HashSet[string]
@@ -83,6 +99,7 @@ try {
 
         # Find the 'Document ID' column in the first three rows
         $DocIDColumn = $null
+        $HeaderRow = $null  # Track which row contains the header
         $FoundHeader = $false
 
         for ($Row = 1; $Row -le 3; $Row++) {
@@ -96,6 +113,7 @@ try {
                 $Cell = $Columns.Item($Col)
                 if ($Cell.Text -match '^\s*Document ID\s*$') {
                     $DocIDColumn = $Cell.Column
+                    $HeaderRow = $Row    # Store which row contains the header
                     $FoundHeader = $true
                     # Release $Cell
                     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($Cell) | Out-Null
@@ -130,9 +148,9 @@ try {
 
         Write-Host "Starting hyperlinking in worksheet '$($Worksheet.Name)'"
 
-        # Get the used range starting from the row after headers
+        # Get the used range starting from the row after the header
         $UsedRange = $Worksheet.UsedRange
-        $StartRow = $UsedRange.Row + 1
+        $StartRow = $UsedRange.Row + $HeaderRow  # Start from the row after where we found the header
         $EndRow = $UsedRange.Row + $UsedRange.Rows.Count - 1
         $LinkCounter = 0
 
@@ -193,6 +211,8 @@ finally {
     [System.GC]::WaitForPendingFinalizers()
 }
 
+
+
 if ($DuplicateFileLookup.Keys.Count -gt 0 -or $MissingFiles.Count -gt 0) {
     # Create errata file with timestamp
     $ErrataFilePath = Join-Path $CurrentDir ("errata_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
@@ -215,4 +235,16 @@ if ($DuplicateFileLookup.Keys.Count -gt 0 -or $MissingFiles.Count -gt 0) {
     
     # Output confirmation message to console
     Write-Host "Errata saved to $ErrataFilePath"
+} else {
+    Write-Host "No errata file needed - all Document IDs were processed successfully!"
 }
+
+# Add line break and total hyperlinks summary before errata handling
+Write-Host "`nTotal hyperlinks created across all worksheets: $TotalHyperlinksAdded"
+
+$scriptDuration = (Get-Date) - $scriptStartTime
+Write-Host "`nTotal execution time: $($scriptDuration.ToString('hh\:mm\:ss'))"
+
+# Pause before exit
+Write-Host "Press ENTER to exit..."
+$null = Read-Host
