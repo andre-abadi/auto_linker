@@ -11,6 +11,9 @@ This script:
 
 <#
 Changes:
+- V13
+  - Fixed column header searching.
+  - Callout found column header and first row to check.
 - V11
   - Folder agnostic, no name requirement just that there's only one.
   - Document ID columns can have words after Document ID and still be included.
@@ -26,7 +29,7 @@ $callout_interval = 5000
 # string to look for to link
 $hyperlink_column_header = "Document ID"
 # set true to show Excel while running
-$excel_visible = $true
+$excel_visible = $false
 #
 # End Global Variables
 #
@@ -120,6 +123,14 @@ try {
     # Iterate through each worksheet using a for loop
     for ($w = 1; $w -le $WorksheetCount; $w++) {
         $Worksheet = $Workbook.Worksheets.Item($w)
+        # Check if worksheet is hidden (0 = hidden, 2 = very hidden)
+        if ($Worksheet.Visible -ne -1) {
+            Write-Host "    Skipping hidden worksheet: '$($Worksheet.Name)'"
+            # Release $Worksheet
+            [System.Runtime.InteropServices.Marshal]::ReleaseComObject($Worksheet) | Out-Null
+            $Worksheet = $null
+            continue
+        }
         #Write-Host "    Processing worksheet: '$($Worksheet.Name)'"
         Write-Host "    " -NoNewline
         Write-Host $Worksheet.Name -ForegroundColor Magenta -NoNewline
@@ -166,14 +177,32 @@ try {
         }
 
         if (-not $DocIDColumn) {
-            Write-Host "    No identifier column found in worksheet '$($Worksheet.Name)'. Skipping."
+            Write-Host "        No identifier column found in worksheet '$($Worksheet.Name)'. Skipping."
             # Release $Worksheet
             [System.Runtime.InteropServices.Marshal]::ReleaseComObject($Worksheet) | Out-Null
             $Worksheet = $null
             continue
         }
-        Write-Host "    Found $hyperlink_column_header header at column $DocIDColumn."
-        Write-Host "    Starting hyperlinking."
+        if ($DocIDColumn) {
+            # Get the actual header text
+            $headerCell = $Worksheet.Cells.Item($HeaderRow, $DocIDColumn)
+            $actualHeader = $headerCell.Text.Trim()
+    
+            # Get the first value in the column (first cell after header)
+            $firstValueCell = $Worksheet.Cells.Item($HeaderRow + 1, $DocIDColumn)
+            $firstValue = $firstValueCell.Text.Trim()
+    
+            Write-Host "        Identifier header '$actualHeader' found at column $DocIDColumn."
+            Write-Host "        First value: $firstValue."
+    
+            # Clean up COM objects
+            [System.Runtime.InteropServices.Marshal]::ReleaseComObject($headerCell) | Out-Null
+            [System.Runtime.InteropServices.Marshal]::ReleaseComObject($firstValueCell) | Out-Null
+            $headerCell = $null
+            $firstValueCell = $null
+        }
+        #Write-Host "    Found $hyperlink_column_header header at column $DocIDColumn."
+        Write-Host "        Starting hyperlinking."
 
         # Get the used range starting from the row after the header
         $UsedRange = $Worksheet.UsedRange
@@ -194,7 +223,7 @@ try {
                     $LinkedDocIDs[$DocID] = $true
                     $DuplicateFileLookup.Remove($DocID) # Remove file from duplicate structure
                     if ($LinkCounter % $callout_interval -eq 0) {
-                        Write-Host "    $LinkCounter hyperlinks created."
+                        Write-Host "        $LinkCounter hyperlinks created."
                         # garbage collection
                         [System.GC]::Collect()
                         [System.GC]::WaitForPendingFinalizers()
@@ -210,8 +239,8 @@ try {
         }
 
 
-        Write-Host "    Finished hyperlinking."
-        Write-Host "    " -NoNewline
+        Write-Host "        Finished hyperlinking."
+        Write-Host "        " -NoNewline
         Write-Host $LinkCounter -ForegroundColor Green -NoNewline
         Write-Host " hyperlinks created."
 
