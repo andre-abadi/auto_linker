@@ -11,6 +11,10 @@ This script:
 
 <#
 Changes:
+- V14
+  - Errata filename only output not whole path.
+  - Log file .log --> .txt
+  - Errate filename prefixed with auto_linker
 - V13
   - Fixed column header searching.
   - Callout found column header and first row to check.
@@ -35,7 +39,7 @@ $excel_visible = $false
 #
 
 $scriptStartTime = Get-Date
-Start-Transcript -Path ("auto_linker_log_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".log")  | Out-Null
+Start-Transcript -Path ("auto_linker_log_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")  | Out-Null
 
 # Load the necessary assemblies for Excel automation
 Add-Type -AssemblyName Microsoft.Office.Interop.Excel
@@ -283,7 +287,7 @@ Write-Host $TotalHyperlinksAdded -ForegroundColor Green
 
 if ($DuplicateFileLookup.Keys.Count -gt 0 -or $MissingFiles.Count -gt 0) {
     # Create errata file with timestamp
-    $ErrataFilePath = Join-Path $CurrentDir ("errata_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
+    $ErrataFilePath = Join-Path $CurrentDir ("auto_linker_errata_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
     
     # Output extraneous files if they exist
     if ($DuplicateFileLookup.Keys.Count -gt 0) {
@@ -302,7 +306,8 @@ if ($DuplicateFileLookup.Keys.Count -gt 0 -or $MissingFiles.Count -gt 0) {
     }
     
     # Output confirmation message to console
-    Write-Host "Errata saved to $ErrataFilePath"
+    $ErrataFileName = Split-Path $ErrataFilePath -Leaf
+    Write-Host "Errata saved to $ErrataFileName"
 } else {
     Write-Host "No errata file needed - all identifiers were processed successfully!"
 }
