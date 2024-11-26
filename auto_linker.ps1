@@ -22,11 +22,11 @@ Changes:
 # Start Global Variables
 #
 # write-host for every x files enumerated and links created
-$max_callout = 5000 
+$callout_interval = 5000 
 # string to look for to link
 $hyperlink_column_header = "Document ID"
 # set true to show Excel while running
-$excel_visible = $false
+$excel_visible = $true
 #
 # End Global Variables
 #
@@ -59,9 +59,6 @@ if ($Folders.Count -ne 1) {
 $DocFolder = $Folders[0].FullName
 
 $enumStart = Get-Date
-
-$TotalFiles = (Get-ChildItem -Path $DocFolder -File | Measure-Object).Count
-$callout_interval = [Math]::Min([Math]::Round(($TotalFiles/10)/100) * 100, $max_callout)
 
 # Get all files in the document folder
 Write-Host "`nEnumerating files in '$(Split-Path $DocFolder -Leaf)'."
@@ -175,7 +172,7 @@ try {
             $Worksheet = $null
             continue
         }
-
+        Write-Host "    Found identifier column $DocIDColumn."
         Write-Host "    Starting hyperlinking."
 
         # Get the used range starting from the row after the header
