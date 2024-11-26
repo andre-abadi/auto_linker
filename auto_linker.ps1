@@ -138,7 +138,7 @@ try {
             $ColumnCount = $Columns.Count
             for ($Col = 1; $Col -le $ColumnCount; $Col++) {
                 $Cell = $Columns.Item($Col)
-                if ($Cell.Text -match "^\s*$DOCUMENT_ID_HEADER\b") {
+                if ($Cell.Text -match "^\s*$hyperlink_column_header\b") {
                     $DocIDColumn = $Cell.Column
                     $HeaderRow = $Row    # Store which row contains the header
                     $FoundHeader = $true
@@ -172,7 +172,7 @@ try {
             $Worksheet = $null
             continue
         }
-        Write-Host "    Found identifier column $DocIDColumn."
+        Write-Host "    Found $hyperlink_column_header header at column $DocIDColumn."
         Write-Host "    Starting hyperlinking."
 
         # Get the used range starting from the row after the header
