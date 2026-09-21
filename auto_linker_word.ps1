@@ -113,7 +113,7 @@ function Add-BatesHyperlinksToRange
         $SearchRange,
         [string]$SearchText,
         [string]$TargetPath,
-        [int]$SafetyLimit = 20
+        [int]$SafetyLimit = 50
     )
 
     $Find = $SearchRange.Find
@@ -134,7 +134,9 @@ function Add-BatesHyperlinksToRange
 
         if ($SafetyCounter -gt $SafetyLimit)
         {
-            Write-Host "        Safety break triggered while searching for $SearchText" -ForegroundColor Yellow
+            Write-Host "        Safety limit reached while searching for $SearchText" -ForegroundColor Yellow
+            Write-Host "            Not all occurences of the above have been hyperlinked."
+            Write-Host "            Consider increaseing SafetyLimit parameter, currently $SafetyLimit."
             break
         }
 
