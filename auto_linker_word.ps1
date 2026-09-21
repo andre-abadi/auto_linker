@@ -92,6 +92,82 @@ function Get-BatesReconciliation
     }
 }
 
+#
+# Word COM constants (avoids unnamed magic numbers at call sites)
+#
+
+$wdFootnotesStory = 2
+$wdCollapseEnd = 0
+$wdFindStop = 0
+
+#
+# Finds every occurrence of $SearchText within $SearchRange and hyperlinks
+# each one to $TargetPath. Shared by the body and footnote passes below so
+# the Find/Collapse/reverse-apply logic only exists once.
+#
+
+function Add-BatesHyperlinksToRange
+{
+    param(
+        $Document,
+        $SearchRange,
+        [string]$SearchText,
+        [string]$TargetPath,
+        [int]$SafetyLimit = 20
+    )
+
+    $Find = $SearchRange.Find
+
+    $Find.ClearFormatting()
+    $Find.Text = $SearchText
+    $Find.Forward = $true
+    $Find.Wrap = $wdFindStop
+
+    $MatchRanges = @()
+    $SafetyCounter = 0
+
+    while ($Find.Execute())
+    {
+        $MatchRanges += , @($SearchRange.Start, $SearchRange.End)
+
+        $SafetyCounter++
+
+        if ($SafetyCounter -gt $SafetyLimit)
+        {
+            Write-Host "        Safety break triggered while searching for $SearchText" -ForegroundColor Yellow
+            break
+        }
+
+        #
+        # Move past the current match before searching again
+        #
+
+        $SearchRange.Collapse($wdCollapseEnd)
+    }
+
+    #
+    # Matches are located first, then hyperlinks are applied last-to-first.
+    # Applying in place while still searching would let Find re-match the Bates
+    # ID hidden inside the newly inserted hyperlink field's address text.
+    #
+
+    for ($MatchIndex = $MatchRanges.Count - 1; $MatchIndex -ge 0; $MatchIndex--)
+    {
+        $MatchStart, $MatchEnd = $MatchRanges[$MatchIndex]
+
+        $HyperlinkRange = $SearchRange.Duplicate
+        $HyperlinkRange.Start = $MatchStart
+        $HyperlinkRange.End = $MatchEnd
+
+        $Document.Hyperlinks.Add(
+            $HyperlinkRange,
+            $TargetPath
+        ) | Out-Null
+    }
+
+    return $MatchRanges.Count
+}
+
 # Folder names supported
 $SupportedFolders = @("Evidence", "Documents")
 
@@ -306,6 +382,9 @@ try
 #
 # Extract document text into memory
 #
+# Scope is intentionally limited to the main body and footnotes. Headers,
+# footers, endnotes, comments, and text boxes are not scanned or hyperlinked.
+#
 
 Write-Host ""
 Write-Host "Extracting document text..."
@@ -458,6 +537,10 @@ if ($UnreferencedEvidence.Count -gt 0)
 #
 # Hyperlink all matched Bates references
 #
+# Only the main body and footnote stories are searched here, matching the
+# scan scope above. Word's Find engine is used instead of .NET regex because
+# Hyperlinks.Add requires a live Range, not a plain string offset.
+#
 
 $MatchedBates = $AllBatesLookup.Keys |
     Where-Object { $EvidenceLookup.ContainsKey($_) } |
@@ -481,124 +564,38 @@ if ($MatchedBates.Count -gt 0)
         #
         # BODY
         #
-        # All matches are located first, then hyperlinks are applied last-to-first.
-        # Applying in place while still searching would let Find re-match the Bates
-        # ID hidden inside the newly inserted hyperlink field's address text.
-        #
 
         $BodyRange = $Document.Content.Duplicate
 
-        $Find = $BodyRange.Find
+        $BodyMatchCount = Add-BatesHyperlinksToRange -Document $Document -SearchRange $BodyRange -SearchText $CurrentBates -TargetPath $TargetPath
 
-        $Find.ClearFormatting()
-        $Find.Text = $CurrentBates
-        $Find.Forward = $true
-        $Find.Wrap = 0
-
-        $BodyMatchRanges = @()
-		$SafetyCounter = 0
-
-		while ($Find.Execute())
-		{
-			$BodyMatchRanges += , @($BodyRange.Start, $BodyRange.End)
-
-			$SafetyCounter++
-
-			if ($SafetyCounter -gt 20)
-			{
-				Write-Host "        Safety break triggered in body search for $CurrentBates" -ForegroundColor Yellow
-				break
-			}
-
-			#
-			# Move past the current match before searching again
-			#
-
-			$BodyRange.Collapse(0)
-		}
-
-        for ($MatchIndex = $BodyMatchRanges.Count - 1; $MatchIndex -ge 0; $MatchIndex--)
-        {
-            $MatchStart, $MatchEnd = $BodyMatchRanges[$MatchIndex]
-
-            $HyperlinkRange = $Document.Range($MatchStart, $MatchEnd)
-
-            $Document.Hyperlinks.Add(
-                $HyperlinkRange,
-                $TargetPath
-            ) | Out-Null
-
-            $BodyLinksAdded++
-        }
+        $BodyLinksAdded += $BodyMatchCount
 
         #
         # FOOTNOTES
         #
 
-        $FootnoteMatchRanges = @()
+        $FootnoteMatchCount = 0
 
         if ($FootnoteCount -gt 0)
         {
-            $FootnoteRange = $Document.StoryRanges.Item(2)
+            $FootnoteRange = $Document.StoryRanges.Item($wdFootnotesStory)
 
             if ($FootnoteRange)
             {
-                $FootnoteFind = $FootnoteRange.Find
+                $FootnoteMatchCount = Add-BatesHyperlinksToRange -Document $Document -SearchRange $FootnoteRange -SearchText $CurrentBates -TargetPath $TargetPath
 
-                $FootnoteFind.ClearFormatting()
-                $FootnoteFind.Text = $CurrentBates
-                $FootnoteFind.Forward = $true
-                $FootnoteFind.Wrap = 0
-
-                $SafetyCounter = 0
-
-                while ($FootnoteFind.Execute())
-                {
-                    $FootnoteMatchRanges += , @($FootnoteRange.Start, $FootnoteRange.End)
-
-                    $SafetyCounter++
-
-                    if ($SafetyCounter -gt 20)
-                    {
-                        Write-Host "        Safety break triggered in footnote search for $CurrentBates" -ForegroundColor Yellow
-                        break
-                    }
-
-                    #
-                    # Move past the current match before searching again
-                    #
-
-                    $FootnoteRange.Collapse(0)
-                }
-
-                for ($MatchIndex = $FootnoteMatchRanges.Count - 1; $MatchIndex -ge 0; $MatchIndex--)
-                {
-                    $MatchStart, $MatchEnd = $FootnoteMatchRanges[$MatchIndex]
-
-                    $HyperlinkRange = $FootnoteRange.Duplicate
-                    $HyperlinkRange.Start = $MatchStart
-                    $HyperlinkRange.End = $MatchEnd
-
-                    $Document.Hyperlinks.Add(
-                        $HyperlinkRange,
-                        $TargetPath
-                    ) | Out-Null
-
-                    $FootnoteLinksAdded++
-                }
+                $FootnoteLinksAdded += $FootnoteMatchCount
             }
         }
 
-        $CurrentBatesLinks = $BodyMatchRanges.Count + $FootnoteMatchRanges.Count
+        $CurrentBatesLinks = $BodyMatchCount + $FootnoteMatchCount
         $BatesDuration = (Get-Date) - $BatesStart
         $MatchedBatesProcessed++
 
         Write-Host ("    [{0,2}/{1}] {2,-20}" -f $MatchedBatesProcessed, $MatchedBates.Count, $CurrentBates) -NoNewline
         Write-Host (" {0,2} link{1}" -f $CurrentBatesLinks, $(if ($CurrentBatesLinks -eq 1) { "" } else { "s" })) -NoNewline -ForegroundColor Green
-        Write-Host (" ({0} body, {1} footnote, {2}s)" -f $BodyMatchRanges.Count, $FootnoteMatchRanges.Count, $BatesDuration.TotalSeconds.ToString('0.00'))
-
-		# TESTING LIMIT ITERATION OF HYPERLINKING
-        #break
+        Write-Host (" ({0} body, {1} footnote, {2}s)" -f $BodyMatchCount, $FootnoteMatchCount, $BatesDuration.TotalSeconds.ToString('0.00'))
     }
 
 	$HyperlinkDuration = (Get-Date) - $HyperlinkStart
