@@ -3,6 +3,95 @@
 # Stage 1: Evidence Source Discovery + Hashtable Build
 #
 
+#
+# Pure functions (no script state, no I/O) — testable without Word installed
+#
+
+function Get-BatesMatches
+{
+    param(
+        [string]$Text,
+        [string]$Pattern
+    )
+
+    return [System.Text.RegularExpressions.Regex]::Matches(
+        $Text,
+        $Pattern,
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )
+}
+
+function Get-BatesLookupFromMatches
+{
+    param(
+        $Matches
+    )
+
+    $Lookup = @{}
+
+    foreach ($Match in $Matches)
+    {
+        $Lookup[$Match.Value.ToUpper()] = $true
+    }
+
+    return $Lookup
+}
+
+function Merge-BatesLookup
+{
+    param(
+        [hashtable[]]$Lookups
+    )
+
+    $Merged = @{}
+
+    foreach ($Lookup in $Lookups)
+    {
+        foreach ($Bates in $Lookup.Keys)
+        {
+            $Merged[$Bates] = $true
+        }
+    }
+
+    return $Merged
+}
+
+function Get-BatesReconciliation
+{
+    param(
+        [hashtable]$DocumentBatesLookup,
+        [hashtable]$EvidenceLookup
+    )
+
+    $MatchedCount = 0
+    $MissingFromFolder = @{}
+    $UnreferencedEvidence = @{}
+
+    foreach ($EvidenceID in $EvidenceLookup.Keys)
+    {
+        $UnreferencedEvidence[$EvidenceID] = $true
+    }
+
+    foreach ($Bates in $DocumentBatesLookup.Keys)
+    {
+        if ($EvidenceLookup.ContainsKey($Bates))
+        {
+            $MatchedCount++
+            $UnreferencedEvidence.Remove($Bates)
+        }
+        else
+        {
+            $MissingFromFolder[$Bates] = $true
+        }
+    }
+
+    return [PSCustomObject]@{
+        MatchedCount         = $MatchedCount
+        MissingFromFolder    = $MissingFromFolder
+        UnreferencedEvidence = $UnreferencedEvidence
+    }
+}
+
 # Folder names supported
 $SupportedFolders = @("Evidence", "Documents")
 
@@ -276,20 +365,9 @@ $ScanStart = Get-Date
 
 # Boundaries reject adjacent letters/digits (avoids partial matches) but allow punctuation like ",./)"
 $BatesPattern = '(?<![A-Za-z0-9])[A-Z]{3}\.\d{3}\.\d{3}\.\d{3,4}(?![A-Za-z0-9])'
-$BatesRegexOptions = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
 
-$BodyMatches = [System.Text.RegularExpressions.Regex]::Matches(
-    $BodyText,
-    $BatesPattern,
-    $BatesRegexOptions
-)
-
-$BodyBatesLookup = @{}
-
-foreach ($Match in $BodyMatches)
-{
-    $BodyBatesLookup[$Match.Value.ToUpper()] = $true
-}
+$BodyMatches = Get-BatesMatches -Text $BodyText -Pattern $BatesPattern
+$BodyBatesLookup = Get-BatesLookupFromMatches -Matches $BodyMatches
 
 $ScanDuration = (Get-Date) - $ScanStart
 
@@ -310,18 +388,8 @@ Write-Host "    Duration: $($ScanDuration.ToString('hh\:mm\:ss'))"
 
 $ScanStart = Get-Date
 
-$FootnoteMatches = [System.Text.RegularExpressions.Regex]::Matches(
-    $FootnoteText,
-    $BatesPattern,
-    $BatesRegexOptions
-)
-
-$FootnoteBatesLookup = @{}
-
-foreach ($Match in $FootnoteMatches)
-{
-    $FootnoteBatesLookup[$Match.Value.ToUpper()] = $true
-}
+$FootnoteMatches = Get-BatesMatches -Text $FootnoteText -Pattern $BatesPattern
+$FootnoteBatesLookup = Get-BatesLookupFromMatches -Matches $FootnoteMatches
 
 $ScanDuration = (Get-Date) - $ScanStart
 
@@ -340,17 +408,7 @@ Write-Host "    Duration: $($ScanDuration.ToString('hh\:mm\:ss'))"
 # Combined Bates references
 #
 
-$AllBatesLookup = @{}
-
-foreach ($Bates in $BodyBatesLookup.Keys)
-{
-    $AllBatesLookup[$Bates] = $true
-}
-
-foreach ($Bates in $FootnoteBatesLookup.Keys)
-{
-    $AllBatesLookup[$Bates] = $true
-}
+$AllBatesLookup = Merge-BatesLookup -Lookups @($BodyBatesLookup, $FootnoteBatesLookup)
 
 Write-Host ""
 Write-Host "Document Bates summary."
@@ -362,48 +420,11 @@ Write-Host $AllBatesLookup.Count -ForegroundColor Green
 # Reconciliation
 #
 
-$MatchedCount = 0
+$Reconciliation = Get-BatesReconciliation -DocumentBatesLookup $AllBatesLookup -EvidenceLookup $EvidenceLookup
 
-$MissingFromFolder = @{}
-$UnreferencedEvidence = @{}
-
-#
-# Copy all evidence into the
-# unreferenced bucket initially
-#
-
-foreach ($EvidenceID in $EvidenceLookup.Keys)
-{
-    $UnreferencedEvidence[$EvidenceID] = $true
-}
-
-#
-# Compare document references
-# against evidence folder
-#
-
-foreach ($Bates in $AllBatesLookup.Keys)
-{
-    if ($EvidenceLookup.ContainsKey($Bates))
-    {
-        $MatchedCount++
-
-        #
-        # Remove matched evidence
-        # from unreferenced list
-        #
-
-        $UnreferencedEvidence.Remove($Bates)
-    }
-    else
-    {
-        #
-        # In document but not folder
-        #
-
-        $MissingFromFolder[$Bates] = $true
-    }
-}
+$MatchedCount = $Reconciliation.MatchedCount
+$MissingFromFolder = $Reconciliation.MissingFromFolder
+$UnreferencedEvidence = $Reconciliation.UnreferencedEvidence
 
 Write-Host ""
 Write-Host "Evidence reconciliation complete."
