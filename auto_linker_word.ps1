@@ -467,6 +467,10 @@ if ($MatchedBates.Count -gt 0)
         #
         # BODY
         #
+        # All matches are located first, then hyperlinks are applied last-to-first.
+        # Applying in place while still searching would let Find re-match the Bates
+        # ID hidden inside the newly inserted hyperlink field's address text.
+        #
 
         $BodyRange = $Document.Content.Duplicate
 
@@ -477,21 +481,14 @@ if ($MatchedBates.Count -gt 0)
         $Find.Forward = $true
         $Find.Wrap = 0
 
+        $BodyMatches = @()
 		$SafetyCounter = 0
 
 		while ($Find.Execute())
 		{
-			Write-Host (" {0}-{1}" -f $FoundRange.Start, $FoundRange.End)
-			$FoundRange = $SearchRange.Duplicate
-			$Document.Hyperlinks.Add(
-				$BodyRange,
-				$TargetPath
-			) | Out-Null
-			
-			$SearchRange.Start = $FoundRange.End
-			$SearchRange.End = $SearchScope.End
+			Write-Host ("     Body match {0}-{1}" -f $BodyRange.Start, $BodyRange.End)
 
-			$BodyLinksAdded++
+			$BodyMatches += , @($BodyRange.Start, $BodyRange.End)
 
 			$SafetyCounter++
 
@@ -502,50 +499,93 @@ if ($MatchedBates.Count -gt 0)
 			}
 
 			#
-			# Move past the current match
+			# Move past the current match before searching again
 			#
 
-			$BodyRange.Collapse(1)
+			$BodyRange.Collapse(0)
 		}
+
+        for ($MatchIndex = $BodyMatches.Count - 1; $MatchIndex -ge 0; $MatchIndex--)
+        {
+            $MatchStart, $MatchEnd = $BodyMatches[$MatchIndex]
+
+            $HyperlinkRange = $Document.Range($MatchStart, $MatchEnd)
+
+            $Document.Hyperlinks.Add(
+                $HyperlinkRange,
+                $TargetPath
+            ) | Out-Null
+
+            $BodyLinksAdded++
+            $CurrentBatesLinks++
+        }
 
         #
         # FOOTNOTES
         #
-		
-		$SafetyCounter = 0
-		Write-Host (" {0}-{1}" -f $FoundRange.Start, $FoundRange.End)
-		$FoundRange = $SearchRange.Duplicate
-		while ($Find.Execute())
-		{
-			$Document.Hyperlinks.Add(
-				$Range,
-				$TargetPath
-			) | Out-Null
-			$SearchRange.Start = $FoundRange.End
-			$SearchRange.End = $SearchScope.End
-			$FootnoteLinksAdded++
-			$CurrentBatesLinks++
 
-			$SafetyCounter++
+        if ($FootnoteCount -gt 0)
+        {
+            $FootnoteRange = $Document.StoryRanges.Item(2)
 
-			if ($SafetyCounter -gt 20)
-			{
-				Write-Host "        Safety break triggered in footnote search for $CurrentBates" -ForegroundColor Yellow
-				break
-			}
+            if ($FootnoteRange)
+            {
+                $FootnoteFind = $FootnoteRange.Find
 
-			#
-			# Move past the current match
-			#
+                $FootnoteFind.ClearFormatting()
+                $FootnoteFind.Text = $CurrentBates
+                $FootnoteFind.Forward = $true
+                $FootnoteFind.Wrap = 0
 
-			$Range.Collapse(1)
-		}
+                $FootnoteMatches = @()
+                $SafetyCounter = 0
+
+                while ($FootnoteFind.Execute())
+                {
+                    Write-Host ("     Footnote match {0}-{1}" -f $FootnoteRange.Start, $FootnoteRange.End)
+
+                    $FootnoteMatches += , @($FootnoteRange.Start, $FootnoteRange.End)
+
+                    $SafetyCounter++
+
+                    if ($SafetyCounter -gt 20)
+                    {
+                        Write-Host "        Safety break triggered in footnote search for $CurrentBates" -ForegroundColor Yellow
+                        break
+                    }
+
+                    #
+                    # Move past the current match before searching again
+                    #
+
+                    $FootnoteRange.Collapse(0)
+                }
+
+                for ($MatchIndex = $FootnoteMatches.Count - 1; $MatchIndex -ge 0; $MatchIndex--)
+                {
+                    $MatchStart, $MatchEnd = $FootnoteMatches[$MatchIndex]
+
+                    $HyperlinkRange = $FootnoteRange.Duplicate
+                    $HyperlinkRange.Start = $MatchStart
+                    $HyperlinkRange.End = $MatchEnd
+
+                    $Document.Hyperlinks.Add(
+                        $HyperlinkRange,
+                        $TargetPath
+                    ) | Out-Null
+
+                    $FootnoteLinksAdded++
+                    $CurrentBatesLinks++
+                }
+            }
+        }
+
 		Write-Host " $CurrentBates : $CurrentBatesLinks"
 
         $MatchedBatesProcessed++
 		
 		$BatesDuration = (Get-Date) - $BatesStart
-		Write-Host "        $CurrentBates : $CurrentLinksAdded links in $($BatesDuration.TotalSeconds.ToString('0.00')) seconds"
+		Write-Host "        $CurrentBates : $CurrentBatesLinks links in $($BatesDuration.TotalSeconds.ToString('0.00')) seconds"
 
         Write-Host "    $MatchedBatesProcessed / $($MatchedBates.Count) Bates linked."
 		
