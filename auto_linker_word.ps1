@@ -234,9 +234,10 @@ foreach ($File in $EvidenceFiles) {
 
     #
     # Validate filename format
+    # Optional "-N"/"-NN" suffix supported (e.g. ABX.456.876.0000-1)
     #
 
-    if ($EvidenceID -notmatch '^[A-Z]{3}\.\d{3}\.\d{3}\.\d{3,4}$') {
+    if ($EvidenceID -notmatch '^[A-Z]{3}\.\d{3}\.\d{3}\.\d{3,4}(-\d{1,2})?$') {
 
         $InvalidEvidenceFiles += $File.Name
 
@@ -285,6 +286,8 @@ if ($InvalidEvidenceFiles.Count -gt 0) {
     Write-Host "Expected filename format:" -ForegroundColor Yellow
     Write-Host "    ABC.123.123.123.ext"
     Write-Host "    ABC.123.123.1234.ext"
+    Write-Host "    ABC.123.123.1234-1.ext"
+    Write-Host "    ABC.123.123.1234-12.ext"
     Write-Host ""
     Write-Host "No additional text is permitted in the filename."
     Write-Host ""
@@ -447,7 +450,8 @@ Write-Host $TotalCharCount -ForegroundColor Green
 $ScanStart = Get-Date
 
 # Boundaries reject adjacent letters/digits (avoids partial matches) but allow punctuation like ",./)"
-$BatesPattern = '(?<![A-Za-z0-9])[A-Z]{3}\.\d{3}\.\d{3}\.\d{3,4}(?![A-Za-z0-9])'
+# Optional "-N"/"-NN" suffix supported (e.g. ABX.456.876.0000-1)
+$BatesPattern = '(?<![A-Za-z0-9])[A-Z]{3}\.\d{3}\.\d{3}\.\d{3,4}(-\d{1,2})?(?![A-Za-z0-9])'
 
 $BodyMatches = Get-BatesMatches -Text $BodyText -Pattern $BatesPattern
 $BodyBatesLookup = Get-BatesLookupFromMatches -Matches $BodyMatches
