@@ -184,12 +184,14 @@ $EvidenceFolders = Get-ChildItem -Directory |
 # Validation
 if ($EvidenceFolders.Count -eq 0) {
     Write-Error "No 'Evidence' or 'Documents' folder found."
-    exit 1
+    $LASTEXITCODE = 1
+    return
 }
 
 if ($EvidenceFolders.Count -gt 1) {
     Write-Error "Both 'Evidence' and 'Documents' folders were found. Only one may exist."
-    exit 1
+    $LASTEXITCODE = 1
+    return
 }
 
 $EvidenceFolder = $EvidenceFolders[0]
@@ -261,7 +263,8 @@ foreach ($File in $EvidenceFiles) {
         Write-Host "    $($File.Name)"
         Write-Host ""
 
-        exit 1
+        $LASTEXITCODE = 1
+        return
     }
 
     $EvidenceLookup[$EvidenceID] = $File.Name
@@ -292,7 +295,8 @@ if ($InvalidEvidenceFiles.Count -gt 0) {
     Write-Host "No additional text is permitted in the filename."
     Write-Host ""
 
-    exit 1
+    $LASTEXITCODE = 1
+    return
 }
 
 $EnumerationDuration = (Get-Date) - $EnumerationStart
@@ -312,7 +316,8 @@ $WordDocuments = Get-ChildItem -File -Filter "*.docx" |
 
 if ($WordDocuments.Count -eq 0) {
     Write-Error "No .docx files found in the current directory."
-    exit 1
+    $LASTEXITCODE = 1
+    return
 }
 
 #
