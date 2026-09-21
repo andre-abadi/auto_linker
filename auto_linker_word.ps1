@@ -457,12 +457,8 @@ if ($MatchedBates.Count -gt 0)
 
 	foreach ($CurrentBates in $MatchedBates)
 	{
-		$CurrentBatesLinks = 0
-
-		Write-Host ("Searching for {0}" -f $CurrentBates)
 		$BatesStart = Get-Date
         $TargetPath = "./" + $EvidenceFolder.Name + "/" + $EvidenceLookup[$CurrentBates]
-        Write-Host "        $TargetPath"
 
         #
         # BODY
@@ -486,8 +482,6 @@ if ($MatchedBates.Count -gt 0)
 
 		while ($Find.Execute())
 		{
-			Write-Host ("     Body match {0}-{1}" -f $BodyRange.Start, $BodyRange.End)
-
 			$BodyMatches += , @($BodyRange.Start, $BodyRange.End)
 
 			$SafetyCounter++
@@ -517,12 +511,13 @@ if ($MatchedBates.Count -gt 0)
             ) | Out-Null
 
             $BodyLinksAdded++
-            $CurrentBatesLinks++
         }
 
         #
         # FOOTNOTES
         #
+
+        $FootnoteMatches = @()
 
         if ($FootnoteCount -gt 0)
         {
@@ -537,13 +532,10 @@ if ($MatchedBates.Count -gt 0)
                 $FootnoteFind.Forward = $true
                 $FootnoteFind.Wrap = 0
 
-                $FootnoteMatches = @()
                 $SafetyCounter = 0
 
                 while ($FootnoteFind.Execute())
                 {
-                    Write-Host ("     Footnote match {0}-{1}" -f $FootnoteRange.Start, $FootnoteRange.End)
-
                     $FootnoteMatches += , @($FootnoteRange.Start, $FootnoteRange.End)
 
                     $SafetyCounter++
@@ -575,20 +567,18 @@ if ($MatchedBates.Count -gt 0)
                     ) | Out-Null
 
                     $FootnoteLinksAdded++
-                    $CurrentBatesLinks++
                 }
             }
         }
 
-		Write-Host " $CurrentBates : $CurrentBatesLinks"
-
+        $CurrentBatesLinks = $BodyMatches.Count + $FootnoteMatches.Count
+        $BatesDuration = (Get-Date) - $BatesStart
         $MatchedBatesProcessed++
-		
-		$BatesDuration = (Get-Date) - $BatesStart
-		Write-Host "        $CurrentBates : $CurrentBatesLinks links in $($BatesDuration.TotalSeconds.ToString('0.00')) seconds"
 
-        Write-Host "    $MatchedBatesProcessed / $($MatchedBates.Count) Bates linked."
-		
+        Write-Host ("    [{0,2}/{1}] {2,-20}" -f $MatchedBatesProcessed, $MatchedBates.Count, $CurrentBates) -NoNewline
+        Write-Host (" {0,2} link{1}" -f $CurrentBatesLinks, $(if ($CurrentBatesLinks -eq 1) { "" } else { "s" })) -NoNewline -ForegroundColor Green
+        Write-Host (" ({0} body, {1} footnote, {2}s)" -f $BodyMatches.Count, $FootnoteMatches.Count, $BatesDuration.TotalSeconds.ToString('0.00'))
+
 		# TESTING LIMIT ITERATION OF HYPERLINKING
         #break
     }
