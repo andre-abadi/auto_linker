@@ -145,6 +145,8 @@ function Add-BatesHyperlinksToRange
         $SearchRange.Collapse($wdCollapseEnd)
     }
 
+    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($Find) | Out-Null
+
     #
     # Matches are located first, then hyperlinks are applied last-to-first.
     # Applying in place while still searching would let Find re-match the Bates
@@ -163,6 +165,8 @@ function Add-BatesHyperlinksToRange
             $HyperlinkRange,
             $TargetPath
         ) | Out-Null
+
+        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($HyperlinkRange) | Out-Null
     }
 
     return $MatchRanges.Count
@@ -571,6 +575,8 @@ if ($MatchedBates.Count -gt 0)
 
         $BodyLinksAdded += $BodyMatchCount
 
+        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($BodyRange) | Out-Null
+
         #
         # FOOTNOTES
         #
@@ -586,6 +592,8 @@ if ($MatchedBates.Count -gt 0)
                 $FootnoteMatchCount = Add-BatesHyperlinksToRange -Document $Document -SearchRange $FootnoteRange -SearchText $CurrentBates -TargetPath $TargetPath
 
                 $FootnoteLinksAdded += $FootnoteMatchCount
+
+                [System.Runtime.InteropServices.Marshal]::ReleaseComObject($FootnoteRange) | Out-Null
             }
         }
 
@@ -641,9 +649,13 @@ finally
 	{
 		$TotalLinksAdded = $BodyLinksAdded + $FootnoteLinksAdded
 
-		if ($TotalLinksAdded -gt 1)
+		# Save only if at least one hyperlink was actually created
+		if ($TotalLinksAdded -ge 1)
 		{
 			Write-Host "Saving document..."
+
+			# Frees the undo history built up by the hyperlink insertions before saving
+			$Document.UndoClear()
 
 			$Document.Save()
 
@@ -651,7 +663,7 @@ finally
 		}
 		else
 		{
-			Write-Host "Document not saved because fewer than two hyperlinks were created." -ForegroundColor Yellow
+			Write-Host "Document not saved because no hyperlinks were created." -ForegroundColor Yellow
 		}
 	}
 
