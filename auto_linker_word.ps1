@@ -136,7 +136,8 @@ function Add-BatesHyperlinksToRange
         {
             Write-Host "        Safety limit reached while searching for $SearchText" -ForegroundColor Yellow
             Write-Host "            Not all occurences of the above have been hyperlinked."
-            Write-Host "            Consider increaseing SafetyLimit parameter, currently $SafetyLimit."
+            Write-Host "            Consider increaseing SafetyLimit parameter, currently " -NoNewline
+            Write-Host $SafetyLimit -ForegroundColor Yellow
             break
         }
 
