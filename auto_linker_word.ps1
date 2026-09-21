@@ -43,7 +43,6 @@ Write-Host "Found $($EvidenceFiles.Count) files."
 #
 
 $EvidenceLookup = @{}
-$UnreferencedEvidence = @{}
 
 $FileCounter = 0
 $CalloutInterval = 5000
@@ -92,16 +91,10 @@ foreach ($File in $EvidenceFiles) {
         Write-Host "    $($File.Name)"
         Write-Host ""
 
-        return
+        exit 1
     }
 
     $EvidenceLookup[$EvidenceID] = $File.Name
-
-    #
-    # Clone tracking structure for later reconciliation
-    #
-
-    $UnreferencedEvidence[$EvidenceID] = $File.Name
 }
 
 #
@@ -127,7 +120,7 @@ if ($InvalidEvidenceFiles.Count -gt 0) {
     Write-Host "No additional text is permitted in the filename."
     Write-Host ""
 
-    return
+    exit 1
 }
 
 $EnumerationDuration = (Get-Date) - $EnumerationStart
@@ -281,11 +274,14 @@ Write-Host $TotalCharCount -ForegroundColor Green
 
 $ScanStart = Get-Date
 
-$BatesPattern = '(?<!\S)[A-Z]{3}\.\d{3}\.\d{3}\.\d{3,4}(?!\S)'
+# Boundaries reject adjacent letters/digits (avoids partial matches) but allow punctuation like ",./)"
+$BatesPattern = '(?<![A-Za-z0-9])[A-Z]{3}\.\d{3}\.\d{3}\.\d{3,4}(?![A-Za-z0-9])'
+$BatesRegexOptions = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
 
 $BodyMatches = [System.Text.RegularExpressions.Regex]::Matches(
     $BodyText,
-    $BatesPattern
+    $BatesPattern,
+    $BatesRegexOptions
 )
 
 $BodyBatesLookup = @{}
@@ -316,7 +312,8 @@ $ScanStart = Get-Date
 
 $FootnoteMatches = [System.Text.RegularExpressions.Regex]::Matches(
     $FootnoteText,
-    $BatesPattern
+    $BatesPattern,
+    $BatesRegexOptions
 )
 
 $FootnoteBatesLookup = @{}
@@ -445,15 +442,15 @@ $MatchedBates = $AllBatesLookup.Keys |
     Where-Object { $EvidenceLookup.ContainsKey($_) } |
     Sort-Object
 
+$MatchedBatesProcessed = 0
+$BodyLinksAdded = 0
+$FootnoteLinksAdded = 0
+
 if ($MatchedBates.Count -gt 0)
 {
 	$HyperlinkStart = Get-Date
     Write-Host ""
     Write-Host "Starting hyperlinking..."
-
-    $MatchedBatesProcessed = 0
-    $BodyLinksAdded = 0
-    $FootnoteLinksAdded = 0
 
 	foreach ($CurrentBates in $MatchedBates)
 	{
@@ -477,12 +474,12 @@ if ($MatchedBates.Count -gt 0)
         $Find.Forward = $true
         $Find.Wrap = 0
 
-        $BodyMatches = @()
+        $BodyMatchRanges = @()
 		$SafetyCounter = 0
 
 		while ($Find.Execute())
 		{
-			$BodyMatches += , @($BodyRange.Start, $BodyRange.End)
+			$BodyMatchRanges += , @($BodyRange.Start, $BodyRange.End)
 
 			$SafetyCounter++
 
@@ -499,9 +496,9 @@ if ($MatchedBates.Count -gt 0)
 			$BodyRange.Collapse(0)
 		}
 
-        for ($MatchIndex = $BodyMatches.Count - 1; $MatchIndex -ge 0; $MatchIndex--)
+        for ($MatchIndex = $BodyMatchRanges.Count - 1; $MatchIndex -ge 0; $MatchIndex--)
         {
-            $MatchStart, $MatchEnd = $BodyMatches[$MatchIndex]
+            $MatchStart, $MatchEnd = $BodyMatchRanges[$MatchIndex]
 
             $HyperlinkRange = $Document.Range($MatchStart, $MatchEnd)
 
@@ -517,7 +514,7 @@ if ($MatchedBates.Count -gt 0)
         # FOOTNOTES
         #
 
-        $FootnoteMatches = @()
+        $FootnoteMatchRanges = @()
 
         if ($FootnoteCount -gt 0)
         {
@@ -536,7 +533,7 @@ if ($MatchedBates.Count -gt 0)
 
                 while ($FootnoteFind.Execute())
                 {
-                    $FootnoteMatches += , @($FootnoteRange.Start, $FootnoteRange.End)
+                    $FootnoteMatchRanges += , @($FootnoteRange.Start, $FootnoteRange.End)
 
                     $SafetyCounter++
 
@@ -553,9 +550,9 @@ if ($MatchedBates.Count -gt 0)
                     $FootnoteRange.Collapse(0)
                 }
 
-                for ($MatchIndex = $FootnoteMatches.Count - 1; $MatchIndex -ge 0; $MatchIndex--)
+                for ($MatchIndex = $FootnoteMatchRanges.Count - 1; $MatchIndex -ge 0; $MatchIndex--)
                 {
-                    $MatchStart, $MatchEnd = $FootnoteMatches[$MatchIndex]
+                    $MatchStart, $MatchEnd = $FootnoteMatchRanges[$MatchIndex]
 
                     $HyperlinkRange = $FootnoteRange.Duplicate
                     $HyperlinkRange.Start = $MatchStart
@@ -571,13 +568,13 @@ if ($MatchedBates.Count -gt 0)
             }
         }
 
-        $CurrentBatesLinks = $BodyMatches.Count + $FootnoteMatches.Count
+        $CurrentBatesLinks = $BodyMatchRanges.Count + $FootnoteMatchRanges.Count
         $BatesDuration = (Get-Date) - $BatesStart
         $MatchedBatesProcessed++
 
         Write-Host ("    [{0,2}/{1}] {2,-20}" -f $MatchedBatesProcessed, $MatchedBates.Count, $CurrentBates) -NoNewline
         Write-Host (" {0,2} link{1}" -f $CurrentBatesLinks, $(if ($CurrentBatesLinks -eq 1) { "" } else { "s" })) -NoNewline -ForegroundColor Green
-        Write-Host (" ({0} body, {1} footnote, {2}s)" -f $BodyMatches.Count, $FootnoteMatches.Count, $BatesDuration.TotalSeconds.ToString('0.00'))
+        Write-Host (" ({0} body, {1} footnote, {2}s)" -f $BodyMatchRanges.Count, $FootnoteMatchRanges.Count, $BatesDuration.TotalSeconds.ToString('0.00'))
 
 		# TESTING LIMIT ITERATION OF HYPERLINKING
         #break
