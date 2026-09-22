@@ -184,7 +184,7 @@ Write-Host "Checking for source folders..."
 
 # Find matching folders in current directory
 $EvidenceFolders = Get-ChildItem -Directory |
-    Where-Object { $_.Name -in $SupportedFolders }
+    Where-Object { $_.Name -cIn $SupportedFolders }
 
 # Validation
 if ($EvidenceFolders.Count -eq 0) {
@@ -211,6 +211,12 @@ $EnumerationStart = Get-Date
 $EvidenceFiles = Get-ChildItem -Path $EvidenceFolder.FullName -File
 
 Write-Host "Found $($EvidenceFiles.Count) files."
+
+if ($EvidenceFiles.Count -eq 0)
+{
+    Write-Error "The '$($EvidenceFolder.Name)' folder is empty. Cannot continue."
+    return
+}
 
 #
 # Build lookup structures
@@ -370,6 +376,7 @@ Write-Host "Opening Word document..."
 
 $Word = $null
 $Document = $null
+$DocumentWasOpened = $false
 
 try
 {
@@ -378,6 +385,7 @@ try
     $Word.DisplayAlerts = 0
 
     $Document = $Word.Documents.Open($WordDocumentPath)
+    $DocumentWasOpened = $true
 
     Write-Host "Document opened successfully." -ForegroundColor Green
 
@@ -497,6 +505,12 @@ Write-Host "Document Bates summary."
 
 Write-Host "    Total unique Bates references: " -NoNewline
 Write-Host $AllBatesLookup.Count -ForegroundColor Green
+
+if ($AllBatesLookup.Count -eq 0)
+{
+    Write-Error "No Bates references found in the Word document. Cannot continue."
+    return
+}
 
 #
 # Reconciliation
@@ -638,7 +652,9 @@ else
 }
 catch
 {
-    Write-Error $_
+    Write-Host "Could not open or process the Word document." -ForegroundColor Red
+    Write-Host "Did you forget to close it before running the script?" -ForegroundColor Red
+    Write-Host "Error details: $($_.Exception.Message)" -ForegroundColor Red
 }
 finally
 {
@@ -666,12 +682,11 @@ finally
 		}
 	}
 
-    Write-Host ""
-
-    Write-Host "Closing Word document..."
-
     if ($Document)
     {
+        Write-Host ""
+        Write-Host "Closing Word document..."
+
         $Document.Close($false)
         [System.Runtime.InteropServices.Marshal]::ReleaseComObject($Document) | Out-Null
         $Document = $null
@@ -687,7 +702,10 @@ finally
     [System.GC]::Collect()
     [System.GC]::WaitForPendingFinalizers()
 
-    Write-Host "Word closed." -ForegroundColor Green
+    if ($DocumentWasOpened)
+    {
+        Write-Host "Word closed." -ForegroundColor Green
+    }
 
     $TotalRuntime = (Get-Date) - $ScriptStart
     Write-Host "Total runtime: " -NoNewline
