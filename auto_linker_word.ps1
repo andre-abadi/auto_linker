@@ -3,6 +3,8 @@
 # Stage 1: Evidence Source Discovery + Hashtable Build
 #
 
+$ScriptStart = Get-Date
+
 #
 # Pure functions (no script state, no I/O) — testable without Word installed
 #
@@ -686,4 +688,8 @@ finally
     [System.GC]::WaitForPendingFinalizers()
 
     Write-Host "Word closed." -ForegroundColor Green
+
+    $TotalRuntime = (Get-Date) - $ScriptStart
+    Write-Host "Total runtime: " -NoNewline
+    Write-Host $TotalRuntime.ToString('hh\:mm\:ss') -ForegroundColor Green
 }
