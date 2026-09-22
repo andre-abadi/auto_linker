@@ -5,6 +5,25 @@
 
 $ScriptStart = Get-Date
 
+function Write-ListingFile
+{
+    param(
+        [string]$Path,
+        [object[]]$Items
+    )
+
+    Remove-Item -Path $Path -Force -ErrorAction SilentlyContinue
+    [System.IO.File]::WriteAllLines($Path, [string[]]@($Items))
+}
+
+$NoBatesPath = Join-Path (Get-Location) "_no_bates.txt"
+$NoReferencePath = Join-Path (Get-Location) "_no_reference.txt"
+$NoFilesPath = Join-Path (Get-Location) "_no_files.txt"
+
+Write-ListingFile -Path $NoBatesPath -Items @()
+Write-ListingFile -Path $NoReferencePath -Items @()
+Write-ListingFile -Path $NoFilesPath -Items @()
+
 #
 # Pure functions (no script state, no I/O) — testable without Word installed
 #
@@ -294,6 +313,8 @@ if ($InvalidEvidenceFiles.Count -gt 0) {
     Write-Host "These files will be ignored; valid files will continue to be indexed."
 }
 
+Write-ListingFile -Path $NoBatesPath -Items ($InvalidEvidenceFiles | Sort-Object)
+
 $EnumerationDuration = (Get-Date) - $EnumerationStart
 
 Write-Host ""
@@ -521,6 +542,14 @@ $Reconciliation = Get-BatesReconciliation -DocumentBatesLookup $AllBatesLookup -
 $MatchedCount = $Reconciliation.MatchedCount
 $MissingFromFolder = $Reconciliation.MissingFromFolder
 $UnreferencedEvidence = $Reconciliation.UnreferencedEvidence
+
+$UnreferencedFiles = foreach ($EvidenceID in ($UnreferencedEvidence.Keys | Sort-Object))
+{
+    $EvidenceLookup[$EvidenceID]
+}
+
+Write-ListingFile -Path $NoReferencePath -Items $UnreferencedFiles
+Write-ListingFile -Path $NoFilesPath -Items ($MissingFromFolder.Keys | Sort-Object)
 
 Write-Host ""
 Write-Host "Evidence reconciliation complete."
