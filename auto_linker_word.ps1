@@ -4,6 +4,7 @@
 #
 
 $ScriptStart = Get-Date
+$LogFolder = "" # Paste the network folder path here, for example: "\\server\share\folder"
 
 function Write-ListingFile
 {
@@ -14,6 +15,80 @@ function Write-ListingFile
 
     Remove-Item -Path $Path -Force -ErrorAction SilentlyContinue
     [System.IO.File]::WriteAllLines($Path, [string[]]@($Items))
+}
+
+function Write-ExecutionLog
+{
+    param(
+        [string]$FolderPath,
+        [int]$HyperlinksCreated
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FolderPath))
+    {
+        return
+    }
+
+    try
+    {
+        $ExistingFolder = Get-Item -LiteralPath $FolderPath -ErrorAction SilentlyContinue
+
+        if ($ExistingFolder)
+        {
+            if (-not $ExistingFolder.PSIsContainer)
+            {
+                throw "The configured log path is not a folder: $FolderPath"
+            }
+        }
+        else
+        {
+            New-Item -Path $FolderPath -ItemType Directory -Force -ErrorAction Stop | Out-Null
+        }
+
+        $LogPath = Join-Path $FolderPath "auto_linker_word_log.csv"
+        $LogEntry = [PSCustomObject]@{
+            ExecutionTime     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+            Username          = $env:USERNAME
+            HyperlinksCreated = $HyperlinksCreated
+        }
+
+        $ExistingLog = Get-Item -LiteralPath $LogPath -ErrorAction SilentlyContinue
+
+        if ($ExistingLog)
+        {
+            if ($ExistingLog.PSIsContainer)
+            {
+                throw "The execution log path is a folder, not a CSV file: $LogPath"
+            }
+
+            $ExistingHeader = Get-Content -LiteralPath $LogPath -TotalCount 1 -ErrorAction Stop
+            $NormalizedHeader = $ExistingHeader.Trim().TrimStart([char]0xFEFF) -replace '"', ''
+
+            if (-not [string]::IsNullOrWhiteSpace($NormalizedHeader) -and
+                $NormalizedHeader -ne "ExecutionTime,Username,HyperlinksCreated")
+            {
+                throw "The existing execution log has unexpected CSV columns: $LogPath"
+            }
+
+            if ([string]::IsNullOrWhiteSpace($NormalizedHeader))
+            {
+                $LogEntry | Export-Csv -Path $LogPath -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
+            }
+            else
+            {
+                $LogEntry | Export-Csv -Path $LogPath -Append -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
+            }
+        }
+        else
+        {
+            $LogEntry | Export-Csv -Path $LogPath -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
+        }
+
+    }
+    catch
+    {
+        return
+    }
 }
 
 $NoBatesPath = Join-Path (Get-Location) "_no_bates.txt"
@@ -398,6 +473,7 @@ Write-Host "Opening Word document..."
 $Word = $null
 $Document = $null
 $DocumentWasOpened = $false
+$TotalLinksAdded = 0
 
 try
 {
@@ -739,4 +815,6 @@ finally
     $TotalRuntime = (Get-Date) - $ScriptStart
     Write-Host "Total runtime: " -NoNewline
     Write-Host $TotalRuntime.ToString('hh\:mm\:ss') -ForegroundColor Green
+
+    Write-ExecutionLog -FolderPath $LogFolder -HyperlinksCreated $TotalLinksAdded
 }
