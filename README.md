@@ -1,3 +1,5 @@
+`Invoke-Expression (Get-Content .\auto_linker_word.txt -Raw)`
+
 # Excel Document ID Auto-Linker
 
 A PowerShell automation script that creates hyperlinks between Document IDs in Excel worksheets and their corresponding files in a directory.
