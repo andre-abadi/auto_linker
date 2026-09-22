@@ -178,7 +178,7 @@ function Add-BatesHyperlinksToRange
 # Folder names supported
 $SupportedFolders = @("Evidence", "Documents")
 
-Write-Host "Checking for evidence source folders..."
+Write-Host "Checking for source folders..."
 
 # Find matching folders in current directory
 $EvidenceFolders = Get-ChildItem -Directory |
@@ -187,13 +187,11 @@ $EvidenceFolders = Get-ChildItem -Directory |
 # Validation
 if ($EvidenceFolders.Count -eq 0) {
     Write-Error "No 'Evidence' or 'Documents' folder found."
-    $LASTEXITCODE = 1
     return
 }
 
 if ($EvidenceFolders.Count -gt 1) {
     Write-Error "Both 'Evidence' and 'Documents' folders were found. Only one may exist."
-    $LASTEXITCODE = 1
     return
 }
 
@@ -266,7 +264,6 @@ foreach ($File in $EvidenceFiles) {
         Write-Host "    $($File.Name)"
         Write-Host ""
 
-        $LASTEXITCODE = 1
         return
     }
 
@@ -280,34 +277,23 @@ foreach ($File in $EvidenceFiles) {
 if ($InvalidEvidenceFiles.Count -gt 0) {
 
     Write-Host ""
-    Write-Host "Invalid evidence filenames found:" -ForegroundColor Red
-    Write-Host "    $($InvalidEvidenceFiles.Count)"
-    Write-Host ""
+    Write-Host "Files ignored because their filenames do not match the expected format: " -NoNewline
+    Write-Host $InvalidEvidenceFiles.Count -ForegroundColor Yellow
 
     foreach ($InvalidFile in ($InvalidEvidenceFiles | Sort-Object)) {
-        Write-Host "        $InvalidFile"
+        Write-Host "    $InvalidFile" -ForegroundColor Yellow
     }
-
-    Write-Host ""
-    Write-Host "Expected filename format:" -ForegroundColor Yellow
-    Write-Host "    ABC.123.123.123.ext"
-    Write-Host "    ABC.123.123.1234.ext"
-    Write-Host "    ABC.123.123.1234-1.ext"
-    Write-Host "    ABC.123.123.1234-12.ext"
-    Write-Host ""
-    Write-Host "No additional text is permitted in the filename."
-    Write-Host ""
-
-    $LASTEXITCODE = 1
-    return
+    Write-Host "These files will be ignored; valid files will continue to be indexed."
 }
 
 $EnumerationDuration = (Get-Date) - $EnumerationStart
 
 Write-Host ""
-Write-Host "Evidence indexing complete."
-Write-Host "    Indexed IDs: $($EvidenceLookup.Count)"
-Write-Host "    Duration: $($EnumerationDuration.ToString('hh\:mm\:ss'))"
+Write-Host "File indexing complete."
+Write-Host "    Indexed files: " -NoNewline
+Write-Host $EvidenceLookup.Count -ForegroundColor Green
+Write-Host "    Duration: " -NoNewline
+Write-Host $EnumerationDuration.ToString('hh\:mm\:ss') -ForegroundColor Green
 
 #
 # Enumerate DOCX files in current directory
@@ -319,7 +305,6 @@ $WordDocuments = Get-ChildItem -File -Filter "*.docx" |
 
 if ($WordDocuments.Count -eq 0) {
     Write-Error "No .docx files found in the current directory."
-    $LASTEXITCODE = 1
     return
 }
 
@@ -534,7 +519,7 @@ if ($MissingFromFolder.Count -gt 0)
 {
     foreach ($Bates in ($MissingFromFolder.Keys | Sort-Object))
     {
-        Write-Host "        $Bates"
+        Write-Host "        $Bates" -ForegroundColor Yellow
     }
 }
 
@@ -545,7 +530,7 @@ if ($UnreferencedEvidence.Count -gt 0)
 {
     foreach ($Bates in ($UnreferencedEvidence.Keys | Sort-Object))
     {
-        Write-Host "        $Bates"
+        Write-Host "        $Bates" -ForegroundColor Yellow
     }
 }
 ##############################
