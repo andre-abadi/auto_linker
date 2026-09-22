@@ -1,10 +1,9 @@
-#
-# V15 Prototype
-# Stage 1: Evidence Source Discovery + Hashtable Build
-#
+# --- Script metadata ---
+# V15 prototype.
+# Stage 1: Evidence source discovery and hashtable build.
 
 $ScriptStart = Get-Date
-$LogFolder = "" # Paste the network folder path here, for example: "\\server\share\folder"
+$LogFolder = "" # Paste the network folder path here, for example: "\\server\share\folder".
 
 function Write-ListingFile
 {
@@ -99,9 +98,8 @@ Write-ListingFile -Path $NoBatesPath -Items @()
 Write-ListingFile -Path $NoReferencePath -Items @()
 Write-ListingFile -Path $NoFilesPath -Items @()
 
-#
-# Pure functions (no script state, no I/O) — testable without Word installed
-#
+# --- Pure functions ---
+# These functions have no script state or I/O and can be tested without Word installed.
 
 function Get-BatesMatches
 {
@@ -188,19 +186,16 @@ function Get-BatesReconciliation
     }
 }
 
-#
-# Word COM constants (avoids unnamed magic numbers at call sites)
-#
+# --- Word COM constants ---
+# These constants avoid unnamed magic numbers at call sites.
 
 $wdFootnotesStory = 2
 $wdCollapseEnd = 0
 $wdFindStop = 0
 
-#
-# Finds every occurrence of $SearchText within $SearchRange and hyperlinks
-# each one to $TargetPath. Shared by the body and footnote passes below so
-# the Find/Collapse/reverse-apply logic only exists once.
-#
+# --- Hyperlink range helper ---
+# Finds every occurrence of $SearchText in $SearchRange and links it to $TargetPath.
+# The body and footnote passes share this Find, collapse, and reverse-apply logic.
 
 function Add-BatesHyperlinksToRange
 {
@@ -237,20 +232,16 @@ function Add-BatesHyperlinksToRange
             break
         }
 
-        #
-        # Move past the current match before searching again
-        #
+        # Move past the current match before searching again.
 
         $SearchRange.Collapse($wdCollapseEnd)
     }
 
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($Find) | Out-Null
 
-    #
-    # Matches are located first, then hyperlinks are applied last-to-first.
-    # Applying in place while still searching would let Find re-match the Bates
-    # ID hidden inside the newly inserted hyperlink field's address text.
-    #
+    # Locate all matches first, then apply hyperlinks from last to first.
+    # Applying links during the search could make Find match the Bates ID inside
+    # the newly inserted hyperlink field address.
 
     for ($MatchIndex = $MatchRanges.Count - 1; $MatchIndex -ge 0; $MatchIndex--)
     {
@@ -271,16 +262,16 @@ function Add-BatesHyperlinksToRange
     return $MatchRanges.Count
 }
 
-# Folder names supported
+# Supported source folder names.
 $SupportedFolders = @("Evidence", "Documents")
 
 Write-Host "Checking for source folders..."
 
-# Find matching folders in current directory
+# Find matching folders in the current directory.
 $EvidenceFolders = Get-ChildItem -Directory |
     Where-Object { $_.Name -cIn $SupportedFolders }
 
-# Validation
+# Validate the source folder selection.
 if ($EvidenceFolders.Count -eq 0) {
     Write-Error "No 'Evidence' or 'Documents' folder found."
     return
@@ -296,9 +287,7 @@ $EvidenceFolder = $EvidenceFolders[0]
 Write-Host "Using evidence source folder:" -NoNewline
 Write-Host " $($EvidenceFolder.Name)" -ForegroundColor Green
 
-#
-# Enumerate files
-#
+# --- Enumerate source files ---
 
 $EnumerationStart = Get-Date
 
@@ -312,9 +301,7 @@ if ($EvidenceFiles.Count -eq 0)
     return
 }
 
-#
-# Build lookup structures
-#
+# --- Build evidence lookup ---
 
 $EvidenceLookup = @{}
 
@@ -331,16 +318,11 @@ foreach ($File in $EvidenceFiles) {
         Write-Host "    $FileCounter files indexed."
     }
 
-    #
-    # Filename without extension
-    #
+    # Use the filename without its extension as the evidence ID.
 
     $EvidenceID = $File.BaseName.Trim().ToUpper()
 
-    #
-    # Validate filename format
-    # Optional "-N"/"-NN" suffix supported (e.g. ABX.456.876.0000-1)
-    #
+    # Validate the filename format; an optional -N or -NN suffix is supported.
 
     if ($EvidenceID -notmatch '^[A-Z]{3}\.\d{3}\.\d{3}\.\d{3,4}(-\d{1,2})?$') {
 
@@ -349,9 +331,7 @@ foreach ($File in $EvidenceFiles) {
         continue
     }
 
-    #
-    # Duplicate detection
-    #
+    # Reject duplicate evidence IDs.
 
     if ($EvidenceLookup.ContainsKey($EvidenceID)) {
 
@@ -372,9 +352,7 @@ foreach ($File in $EvidenceFiles) {
     $EvidenceLookup[$EvidenceID] = $File.Name
 }
 
-#
-# Report invalid filenames
-#
+# --- Report invalid filenames ---
 
 if ($InvalidEvidenceFiles.Count -gt 0) {
 
@@ -399,9 +377,7 @@ Write-Host $EvidenceLookup.Count -ForegroundColor Green
 Write-Host "    Duration: " -NoNewline
 Write-Host $EnumerationDuration.ToString('hh\:mm\:ss') -ForegroundColor Green
 
-#
-# Enumerate DOCX files in current directory
-#
+# --- Enumerate Word documents ---
 
 $WordDocuments = Get-ChildItem -File -Filter "*.docx" |
     Where-Object { $_.Name -notlike "~$*" } |
@@ -412,9 +388,8 @@ if ($WordDocuments.Count -eq 0) {
     return
 }
 
-#
-# Auto-select if only one document exists
-#
+# --- Select the Word document ---
+# Select it automatically when only one document is available.
 
 if ($WordDocuments.Count -eq 1)
 {
@@ -463,9 +438,7 @@ Write-Host " $($SelectedDocument.Name)" -ForegroundColor Green
 
 $WordDocumentPath = $SelectedDocument.FullName
 
-#
-# Open Word document
-#
+# --- Open the Word document ---
 
 Write-Host ""
 Write-Host "Opening Word document..."
@@ -486,25 +459,18 @@ try
 
     Write-Host "Document opened successfully." -ForegroundColor Green
 
-#
-# Extract document text into memory
-#
-# Scope is intentionally limited to the main body and footnotes. Headers,
-# footers, endnotes, comments, and text boxes are not scanned or hyperlinked.
-#
+# --- Extract document text ---
+# Only the main body and footnotes are scanned and linked. Headers, footers,
+# endnotes, comments, and text boxes are excluded.
 
 Write-Host ""
 Write-Host "Extracting document text..."
 
-#
-# Main document body
-#
+# Main document body.
 
 $BodyText = $Document.Content.Text
 
-#
-# Footnotes
-#
+# Footnotes.
 
 $FootnoteTextBuilder = New-Object System.Text.StringBuilder
 
@@ -518,9 +484,7 @@ foreach ($Footnote in $Document.Footnotes)
 
 $FootnoteText = $FootnoteTextBuilder.ToString()
 
-#
-# Statistics
-#
+# --- Document statistics ---
 
 $FootnoteCount = $Document.Footnotes.Count
 
@@ -543,14 +507,12 @@ Write-Host $FootnoteCharCount -ForegroundColor Green
 Write-Host "    Total characters: " -NoNewline
 Write-Host $TotalCharCount -ForegroundColor Green
 
-#
-# Main document Bates scan
-#
+# --- Scan the main document body ---
 
 $ScanStart = Get-Date
 
-# Boundaries reject adjacent letters/digits (avoids partial matches) but allow punctuation like ",./)"
-# Optional "-N"/"-NN" suffix supported (e.g. ABX.456.876.0000-1)
+# Reject adjacent letters or digits to avoid partial matches, while allowing
+# punctuation such as ",./)". An optional -N or -NN suffix is supported.
 $BatesPattern = '(?<![A-Za-z0-9])[A-Z]{3}\.\d{3}\.\d{3}\.\d{3,4}(-\d{1,2})?(?![A-Za-z0-9])'
 
 $BodyMatches = Get-BatesMatches -Text $BodyText -Pattern $BatesPattern
@@ -569,9 +531,7 @@ Write-Host $BodyBatesLookup.Count -ForegroundColor Green
 
 Write-Host "    Duration: $($ScanDuration.ToString('hh\:mm\:ss'))"
 
-#
-# Footnote Bates scan
-#
+# --- Scan footnotes ---
 
 $ScanStart = Get-Date
 
@@ -591,9 +551,7 @@ Write-Host $FootnoteBatesLookup.Count -ForegroundColor Green
 
 Write-Host "    Duration: $($ScanDuration.ToString('hh\:mm\:ss'))"
 
-#
-# Combined Bates references
-#
+# --- Combine Bates references ---
 
 $AllBatesLookup = Merge-BatesLookup -Lookups @($BodyBatesLookup, $FootnoteBatesLookup)
 
@@ -609,9 +567,7 @@ if ($AllBatesLookup.Count -eq 0)
     return
 }
 
-#
-# Reconciliation
-#
+# --- Reconcile references with evidence files ---
 
 $Reconciliation = Get-BatesReconciliation -DocumentBatesLookup $AllBatesLookup -EvidenceLookup $EvidenceLookup
 
@@ -654,15 +610,10 @@ if ($UnreferencedEvidence.Count -gt 0)
         Write-Host "        $Bates" -ForegroundColor Yellow
     }
 }
-##############################
-
-#
-# Hyperlink all matched Bates references
-#
-# Only the main body and footnote stories are searched here, matching the
-# scan scope above. Word's Find engine is used instead of .NET regex because
-# Hyperlinks.Add requires a live Range, not a plain string offset.
-#
+# --- Hyperlink matched Bates references ---
+# Search only the main body and footnote stories, matching the scan scope above.
+# Word's Find engine is used because Hyperlinks.Add requires a live Range rather
+# than a plain string offset.
 
 $MatchedBates = $AllBatesLookup.Keys |
     Where-Object { $EvidenceLookup.ContainsKey($_) } |
@@ -683,9 +634,7 @@ if ($MatchedBates.Count -gt 0)
 		$BatesStart = Get-Date
         $TargetPath = "./" + $EvidenceFolder.Name + "/" + $EvidenceLookup[$CurrentBates]
 
-        #
-        # BODY
-        #
+        # Main document body.
 
         $BodyRange = $Document.Content.Duplicate
 
@@ -695,9 +644,7 @@ if ($MatchedBates.Count -gt 0)
 
         [System.Runtime.InteropServices.Marshal]::ReleaseComObject($BodyRange) | Out-Null
 
-        #
-        # FOOTNOTES
-        #
+        # Footnotes.
 
         $FootnoteMatchCount = 0
 
@@ -750,10 +697,7 @@ else
 }
 
 
-###############################
-##
-## Catch Errors and Close Document
-##
+# --- Handle errors and close Word ---
 }
 catch
 {
@@ -769,12 +713,12 @@ finally
 	{
 		$TotalLinksAdded = $BodyLinksAdded + $FootnoteLinksAdded
 
-		# Save only if at least one hyperlink was actually created
+        # Save only when at least one hyperlink was created.
 		if ($TotalLinksAdded -ge 1)
 		{
 			Write-Host "Saving document..."
 
-			# Frees the undo history built up by the hyperlink insertions before saving
+            # Clear the undo history created by hyperlink insertion before saving.
 			$Document.UndoClear()
 
 			$Document.Save()
