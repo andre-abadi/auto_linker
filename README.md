@@ -1,6 +1,59 @@
-`Invoke-Expression (Get-Content .\auto_linker_word.txt -Raw)`
+# Part 1: Word Document Auto-Linker
 
-# Excel Document ID Auto-Linker
+`auto_linker_word.ps1` scans Word documents for Bates document IDs and creates hyperlinks to the matching evidence files. It is intended for a working directory containing:
+
+- A `Covering Material` folder containing one or more `.docx` files.
+- Exactly one document source folder named `Evidence` or `Documents`.
+- Evidence filenames whose base names match Bates IDs, such as `AAA.111.222.333.txt` or `AAA.111.222.4444.txt`.
+
+The script checks the main document body and footnotes for Bates IDs in the format `AAA.111.222.333` *(TLA.3.3.3)* or `AAA.111.222.333` *(TLA.3.3.4)*. An optional suffix such as `-1` or `-12` is supported. It reports invalid filenames, reconciles document references with the evidence folder, and creates hyperlinks for every matching Bates ID. Word documents are saved only when at least one hyperlink is added.
+
+## Word prerequisites
+
+- Windows with PowerShell.
+- Microsoft Word installed, because the script uses Word COM automation.
+- The required folders and files arranged as described above.
+
+## Run the Word script as a PowerShell script
+
+Open PowerShell in the project directory and run:
+
+ ```powershell
+ .\auto_linker_word.ps1
+ ```
+
+Select each document when prompted. Enter a blank response to stop selecting documents. At the end, enter `Y` when prompted if you want the script to write the errata files.
+
+## Run the Word script as a text file
+
+If PowerShell will not execute the file as a `.ps1`, make a copy named `auto_linker_word.txt` and run its contents with `Invoke-Expression` from the same directory:
+
+ ```powershell
+ Invoke-Expression (Get-Content .\auto_linker_word.txt -Raw)
+ ```
+
+Running the contents as text still requires PowerShell and Microsoft Word, and the command must be run from the directory containing `Covering Material` and the evidence folder.
+
+## Word outputs
+
+- Matching Bates IDs in the selected Word documents become hyperlinks to the evidence files.
+- Optionally:
+   - `_no_bates.txt` lists evidence files with invalid Bates filenames.
+   - `_no_reference.txt` lists evidence files that were not referenced by any processed document.
+   - `_no_files.txt` lists Bates IDs referenced by a document but missing from the evidence folder.
+
+## Word performance and complexity
+
+At a high level, the script has three main costs:
+
+- Evidence indexing is approximately linear in the number of evidence files, `O(E)`.
+- Bates scanning is approximately linear in the amount of text in each Word document, `O(T)`.
+- Hyperlinking is the main bottleneck. For each distinct matched Bates ID, Word searches the document body and footnotes again. In the worst case this behaves like `O(B x T)`, where `B` is the number of distinct matched Bates IDs and `T` is the document text size.
+
+This repeated search can look quadratic when the number of Bates IDs and the document size grow together. The dominant practical cost is Word COM automation and inserting hyperlinks, not the PowerShell hashtables used for lookups. Multiple large documents multiply these costs across the run.
+
+
+# Part 2: Excel Document ID Auto-Linker
 
 A PowerShell automation script that creates hyperlinks between Document IDs in Excel worksheets and their corresponding files in a directory.
 
