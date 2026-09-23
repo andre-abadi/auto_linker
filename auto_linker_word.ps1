@@ -1,6 +1,9 @@
 # --- Script metadata ---
 # Stage 1: Evidence source discovery and hashtable build.
 
+# Enable to clear existing errata files before processing.
+$DebugMode = $true
+
 # Folder containing the Word documents.
 $TargetDir = Join-Path (Get-Location).ProviderPath "Covering Material" 
 
@@ -11,6 +14,11 @@ $SupportedFolders = @("Evidence", "Documents")
 $NoBatesPath = Join-Path (Get-Location).ProviderPath "_no_bates.txt"
 $NoReferencePath = Join-Path (Get-Location).ProviderPath "_no_reference.txt"
 $NoFilesPath = Join-Path (Get-Location).ProviderPath "_no_files.txt"
+
+if ($DebugMode)
+{
+    Remove-Item -LiteralPath @($NoBatesPath, $NoReferencePath, $NoFilesPath) -Force -ErrorAction SilentlyContinue
+}
 
 
 # Logging folder (optional)
@@ -109,6 +117,42 @@ function Write-ExecutionLog
     }
 }
 
+function Write-ErrataProgress
+{
+    param(
+        [string]$Name,
+        [int]$PreviousCount,
+        [int]$CurrentCount
+    )
+
+    $Change = $CurrentCount - $PreviousCount
+    $Operator = if ($Change -lt 0) { '-' } else { '+' }
+    $ChangeMagnitude = [Math]::Abs($Change)
+
+    Write-Host "    $Name : " -NoNewline
+    Write-Host $PreviousCount -ForegroundColor Yellow -NoNewline
+
+    if ($Change -eq 0)
+    {
+        Write-Host " + 0" -NoNewline
+    }
+    else
+    {
+        Write-Host " $Operator $ChangeMagnitude" -ForegroundColor Green -NoNewline
+    }
+
+    Write-Host " = " -NoNewline
+
+    if ($CurrentCount -gt 0)
+    {
+        Write-Host $CurrentCount -ForegroundColor Yellow
+    }
+    else
+    {
+        Write-Host $CurrentCount
+    }
+}
+
 
 
 # --- Pure functions ---
@@ -131,12 +175,12 @@ function Get-BatesMatches
 function Get-BatesLookupFromMatches
 {
     param(
-        $Matches
+        $RegexMatches
     )
 
     $Lookup = @{}
 
-    foreach ($Match in $Matches)
+    foreach ($Match in $RegexMatches)
     {
         $Lookup[$Match.Value.ToUpper()] = $true
     }
@@ -450,6 +494,9 @@ if (-not $ValidSelection)
 
 $SelectedDocument = $RemainingDocuments[[int]$Selection - 1]
 
+$PreviousUnreferencedCount = $EvidenceLookup.Count - $AllReferencedBates.Count
+$PreviousMissingCount = $AllMissingBates.Count
+
 Write-Host ""
 Write-Host "Selected document:" -NoNewline
 Write-Host " $($SelectedDocument.Name)" -ForegroundColor Green
@@ -534,7 +581,7 @@ $ScanStart = Get-Date
 $BatesPattern = '(?<![A-Za-z0-9])[A-Z]{3}\.\d{3}\.\d{3}\.\d{3,4}(-\d{1,2})?(?![A-Za-z0-9])'
 
 $BodyMatches = Get-BatesMatches -Text $BodyText -Pattern $BatesPattern
-$BodyBatesLookup = Get-BatesLookupFromMatches -Matches $BodyMatches
+$BodyBatesLookup = Get-BatesLookupFromMatches -RegexMatches $BodyMatches
 
 $ScanDuration = (Get-Date) - $ScanStart
 
@@ -554,7 +601,7 @@ Write-Host "    Duration: $($ScanDuration.ToString('hh\:mm\:ss'))"
 $ScanStart = Get-Date
 
 $FootnoteMatches = Get-BatesMatches -Text $FootnoteText -Pattern $BatesPattern
-$FootnoteBatesLookup = Get-BatesLookupFromMatches -Matches $FootnoteMatches
+$FootnoteBatesLookup = Get-BatesLookupFromMatches -RegexMatches $FootnoteMatches
 
 $ScanDuration = (Get-Date) - $ScanStart
 
@@ -591,11 +638,6 @@ $Reconciliation = Get-BatesReconciliation -DocumentBatesLookup $AllBatesLookup -
 $MatchedCount = $Reconciliation.MatchedCount
 $MissingFromFolder = $Reconciliation.MissingFromFolder
 $UnreferencedEvidence = $Reconciliation.UnreferencedEvidence
-
-$UnreferencedFiles = foreach ($EvidenceID in ($UnreferencedEvidence.Keys | Sort-Object))
-{
-    $EvidenceLookup[$EvidenceID]
-}
 
 Write-Host ""
 Write-Host "Evidence reconciliation complete."
@@ -770,14 +812,19 @@ finally
     }
 
     # Merge this document's reconciliation into the run-wide totals.
-    if ($TotalLinksAdded -gt 1)
-    {
-        foreach ($Bates in $MatchedBates) { $AllReferencedBates[$Bates] = $true }
-        foreach ($Bates in $MissingFromFolder.Keys) { $AllMissingBates[$Bates] = $true }
-    }
+    foreach ($Bates in $MatchedBates) { $AllReferencedBates[$Bates] = $true }
+    foreach ($Bates in $MissingFromFolder.Keys) { $AllMissingBates[$Bates] = $true }
 
+    $CurrentUnreferencedCount = $EvidenceLookup.Count - $AllReferencedBates.Count
+    $CurrentMissingCount = $AllMissingBates.Count
+
+    Write-Host "Errata state after $($SelectedDocument.Name):"
+    Write-ErrataProgress -Name "Files with no Reference" -PreviousCount $PreviousUnreferencedCount -CurrentCount $CurrentUnreferencedCount
+    Write-ErrataProgress -Name "References with no File" -PreviousCount $PreviousMissingCount -CurrentCount $CurrentMissingCount
+
+    Write-Host ""
     $TotalRuntime = (Get-Date) - $ScriptStart
-    Write-Host "Total runtime: " -NoNewline
+    Write-Host "Document processing runtime: "
     Write-Host $TotalRuntime.ToString('hh\:mm\:ss') -ForegroundColor Green
 
     Write-ExecutionLog -FolderPath $LogFolder -HyperlinksCreated $TotalLinksAdded
