@@ -106,10 +106,6 @@ function Write-ExecutionLog
 
 
 
-Write-ListingFile -Path $NoBatesPath -Items @()
-Write-ListingFile -Path $NoReferencePath -Items @()
-Write-ListingFile -Path $NoFilesPath -Items @()
-
 # --- Pure functions ---
 # These functions have no script state or I/O and can be tested without Word installed.
 
@@ -377,8 +373,6 @@ if ($InvalidEvidenceFiles.Count -gt 0) {
     Write-Host "These files will be ignored; valid files will continue to be indexed."
 }
 
-Write-ListingFile -Path $NoBatesPath -Items ($InvalidEvidenceFiles | Sort-Object)
-
 $EnumerationDuration = (Get-Date) - $EnumerationStart
 
 Write-Host ""
@@ -421,8 +415,6 @@ else
     Write-Host "Available Word documents:"
     Write-Host ""
 
-    Write-Host "[0] (Exit without selecting a document)" 
-
     for ($i = 0; $i -lt $WordDocuments.Count; $i++)
     {
         Write-Host "[$($i + 1)] $($WordDocuments[$i].Name)"
@@ -430,29 +422,15 @@ else
 
     Write-Host ""
 
-    do
-    {
-        $Selection = Read-Host "Enter document number"
+    $Selection = Read-Host "Enter document number (blank to exit)"
 
-        if ([string]::IsNullOrWhiteSpace($Selection))
-        {
-            $Selection = "0"
-        }
+    $ValidSelection = (
+        $Selection -match '^\d+$' -and
+        [int]$Selection -ge 1 -and
+        [int]$Selection -le $WordDocuments.Count
+    )
 
-        $ValidSelection = (
-            $Selection -match '^\d+$' -and
-            [int]$Selection -ge 0 -and
-            [int]$Selection -le $WordDocuments.Count
-        )
-
-        if (-not $ValidSelection)
-        {
-            Write-Host "Invalid selection. Please try again." -ForegroundColor Yellow
-        }
-
-    } until ($ValidSelection)
-
-    if ([int]$Selection -eq 0)
+    if (-not $ValidSelection)
     {
         Write-Host ""
         Write-Host "No document selected. Exiting." -ForegroundColor Yellow
@@ -609,9 +587,6 @@ $UnreferencedFiles = foreach ($EvidenceID in ($UnreferencedEvidence.Keys | Sort-
 {
     $EvidenceLookup[$EvidenceID]
 }
-
-Write-ListingFile -Path $NoReferencePath -Items $UnreferencedFiles
-Write-ListingFile -Path $NoFilesPath -Items ($MissingFromFolder.Keys | Sort-Object)
 
 Write-Host ""
 Write-Host "Evidence reconciliation complete."
@@ -784,6 +759,14 @@ finally
     if ($DocumentWasOpened)
     {
         Write-Host "Word closed." -ForegroundColor Green
+    }
+
+    # Errata files only reflect a run that actually produced hyperlinks.
+    if ($TotalLinksAdded -gt 1)
+    {
+        Write-ListingFile -Path $NoBatesPath -Items ($InvalidEvidenceFiles | Sort-Object)
+        Write-ListingFile -Path $NoReferencePath -Items $UnreferencedFiles
+        Write-ListingFile -Path $NoFilesPath -Items ($MissingFromFolder.Keys | Sort-Object)
     }
 
     $TotalRuntime = (Get-Date) - $ScriptStart
