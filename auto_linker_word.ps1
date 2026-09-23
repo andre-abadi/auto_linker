@@ -848,7 +848,24 @@ $OutputErrata = Read-Host "Output errata files? (Y/n)"
 
 if ($OutputErrata -notmatch '^[Yy]$')
 {
-    Write-Host "Errata files were not created. Exiting." -ForegroundColor Yellow
+    $FinalUnreferencedCount = @(
+        foreach ($EvidenceID in $EvidenceLookup.Keys)
+        {
+            if (-not $AllReferencedBates.ContainsKey($EvidenceID))
+            {
+                $EvidenceLookup[$EvidenceID]
+            }
+        }
+    ).Count
+
+    Write-Host "Errata files were not created. Totals for this run:" -ForegroundColor Yellow
+    Write-Host "    Invalid files: " -NoNewline
+    Write-Host $InvalidEvidenceFiles.Count -ForegroundColor Yellow
+    Write-Host "    Files not referenced in any document: " -NoNewline
+    Write-Host $FinalUnreferencedCount -ForegroundColor Yellow
+    Write-Host "    Referenced but missing files: " -NoNewline
+    Write-Host $AllMissingBates.Count -ForegroundColor Yellow
+    Write-Host ""
     return
 }
 
