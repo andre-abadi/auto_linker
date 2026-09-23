@@ -2,15 +2,15 @@
 # Stage 1: Evidence source discovery and hashtable build.
 
 # Folder containing the Word documents.
-$TargetDir = Join-Path (Get-Location) "Covering Material" 
+$TargetDir = Join-Path (Get-Location).ProviderPath "Covering Material" 
 
 # Supported source folder names.
 $SupportedFolders = @("Evidence", "Documents")
 
 # Errata Outputs
-$NoBatesPath = Join-Path (Get-Location) "_no_bates.txt"
-$NoReferencePath = Join-Path (Get-Location) "_no_reference.txt"
-$NoFilesPath = Join-Path (Get-Location) "_no_files.txt"
+$NoBatesPath = Join-Path (Get-Location).ProviderPath "_no_bates.txt"
+$NoReferencePath = Join-Path (Get-Location).ProviderPath "_no_reference.txt"
+$NoFilesPath = Join-Path (Get-Location).ProviderPath "_no_files.txt"
 
 
 # Logging folder (optional)
@@ -25,6 +25,11 @@ function Write-ListingFile
         [string]$Path,
         [object[]]$Items
     )
+
+    if ($null -eq $Items)
+    {
+        $Items = @()
+    }
 
     Remove-Item -Path $Path -Force -ErrorAction SilentlyContinue
     [System.IO.File]::WriteAllLines($Path, [string[]]@($Items))
