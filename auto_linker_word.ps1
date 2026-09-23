@@ -844,6 +844,14 @@ if ($RemainingDocuments.Count -eq 0)
 # _no_reference.txt if no processed document referenced it, and only ends up in
 # _no_files.txt if it was referenced but never matched to an evidence file.
 
+$OutputErrata = Read-Host "Output errata files? (Y/n)"
+
+if ($OutputErrata -notmatch '^[Yy]$')
+{
+    Write-Host "Errata files were not created. Exiting." -ForegroundColor Yellow
+    return
+}
+
 if ($AllReferencedBates.Count -gt 0 -or $AllMissingBates.Count -gt 0)
 {
     $FinalUnreferencedFiles = foreach ($EvidenceID in ($EvidenceLookup.Keys | Sort-Object))
