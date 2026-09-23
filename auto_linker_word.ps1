@@ -1,9 +1,23 @@
 # --- Script metadata ---
-# V15 prototype.
 # Stage 1: Evidence source discovery and hashtable build.
 
+# Folder containing the Word documents.
+$TargetDir = Join-Path (Get-Location) "Covering Material" 
+
+# Supported source folder names.
+$SupportedFolders = @("Evidence", "Documents")
+
+# Errata Outputs
+$NoBatesPath = Join-Path (Get-Location) "_no_bates.txt"
+$NoReferencePath = Join-Path (Get-Location) "_no_reference.txt"
+$NoFilesPath = Join-Path (Get-Location) "_no_files.txt"
+
+
+# Logging folder (optional)
+$LogFolder = ""
+
+# Start timer
 $ScriptStart = Get-Date
-$LogFolder = "" # Paste the network folder path here, for example: "\\server\share\folder".
 
 function Write-ListingFile
 {
@@ -90,9 +104,7 @@ function Write-ExecutionLog
     }
 }
 
-$NoBatesPath = Join-Path (Get-Location) "_no_bates.txt"
-$NoReferencePath = Join-Path (Get-Location) "_no_reference.txt"
-$NoFilesPath = Join-Path (Get-Location) "_no_files.txt"
+
 
 Write-ListingFile -Path $NoBatesPath -Items @()
 Write-ListingFile -Path $NoReferencePath -Items @()
@@ -262,8 +274,7 @@ function Add-BatesHyperlinksToRange
     return $MatchRanges.Count
 }
 
-# Supported source folder names.
-$SupportedFolders = @("Evidence", "Documents")
+
 
 Write-Host "Checking for source folders..."
 
@@ -379,12 +390,17 @@ Write-Host $EnumerationDuration.ToString('hh\:mm\:ss') -ForegroundColor Green
 
 # --- Enumerate Word documents ---
 
-$WordDocuments = Get-ChildItem -File -Filter "*.docx" |
+if (-not (Test-Path -LiteralPath $TargetDir -PathType Container)) {
+    Write-Error "The '$TargetDir' folder does not exist."
+    return
+}
+
+$WordDocuments = Get-ChildItem -Path $TargetDir -File -Filter "*.docx" |
     Where-Object { $_.Name -notlike "~$*" } |
     Sort-Object Name
 
 if ($WordDocuments.Count -eq 0) {
-    Write-Error "No .docx files found in the current directory."
+    Write-Error "No .docx files found in $TargetDir."
     return
 }
 
@@ -405,6 +421,8 @@ else
     Write-Host "Available Word documents:"
     Write-Host ""
 
+    Write-Host "[0] (Exit without selecting a document)" 
+
     for ($i = 0; $i -lt $WordDocuments.Count; $i++)
     {
         Write-Host "[$($i + 1)] $($WordDocuments[$i].Name)"
@@ -416,9 +434,14 @@ else
     {
         $Selection = Read-Host "Enter document number"
 
+        if ([string]::IsNullOrWhiteSpace($Selection))
+        {
+            $Selection = "0"
+        }
+
         $ValidSelection = (
             $Selection -match '^\d+$' -and
-            [int]$Selection -ge 1 -and
+            [int]$Selection -ge 0 -and
             [int]$Selection -le $WordDocuments.Count
         )
 
@@ -428,6 +451,13 @@ else
         }
 
     } until ($ValidSelection)
+
+    if ([int]$Selection -eq 0)
+    {
+        Write-Host ""
+        Write-Host "No document selected. Exiting." -ForegroundColor Yellow
+        return
+    }
 
     $SelectedDocument = $WordDocuments[[int]$Selection - 1]
 }
@@ -632,7 +662,7 @@ if ($MatchedBates.Count -gt 0)
 	foreach ($CurrentBates in $MatchedBates)
 	{
 		$BatesStart = Get-Date
-        $TargetPath = "./" + $EvidenceFolder.Name + "/" + $EvidenceLookup[$CurrentBates]
+        $TargetPath = "../" + $EvidenceFolder.Name + "/" + $EvidenceLookup[$CurrentBates]
 
         # Main document body.
 
