@@ -398,47 +398,52 @@ if ($WordDocuments.Count -eq 0) {
     return
 }
 
+# --- Process Word documents ---
+# Looping allows multiple documents to be handled in a single run.
+
+# Accumulated across every document processed this run, for the final errata files.
+$AllReferencedBates = @{}
+$AllMissingBates = @{}
+
+$RemainingDocuments = New-Object System.Collections.ArrayList
+foreach ($WordDocument in $WordDocuments) { [void]$RemainingDocuments.Add($WordDocument) }
+
+while ($RemainingDocuments.Count -gt 0)
+{
+
+# Reset per document so the reported total runtime covers only this document.
+$ScriptStart = Get-Date
+
 # --- Select the Word document ---
-# Select it automatically when only one document is available.
+# Always prompt so the user confirms the document, even when only one remains.
 
-if ($WordDocuments.Count -eq 1)
+Write-Host ""
+Write-Host "Available Word documents:"
+Write-Host ""
+
+for ($i = 0; $i -lt $RemainingDocuments.Count; $i++)
 {
-    $SelectedDocument = $WordDocuments[0]
-
-    Write-Host ""
-    Write-Host "Single Word document found. Auto-selecting:" -NoNewline
-    Write-Host " $($SelectedDocument.Name)" -ForegroundColor Green
+    Write-Host "[$($i + 1)] $($RemainingDocuments[$i].Name)"
 }
-else
+
+Write-Host ""
+
+$Selection = Read-Host "Enter document number (blank to exit)"
+
+$ValidSelection = (
+    $Selection -match '^\d+$' -and
+    [int]$Selection -ge 1 -and
+    [int]$Selection -le $RemainingDocuments.Count
+)
+
+if (-not $ValidSelection)
 {
     Write-Host ""
-    Write-Host "Available Word documents:"
-    Write-Host ""
-
-    for ($i = 0; $i -lt $WordDocuments.Count; $i++)
-    {
-        Write-Host "[$($i + 1)] $($WordDocuments[$i].Name)"
-    }
-
-    Write-Host ""
-
-    $Selection = Read-Host "Enter document number (blank to exit)"
-
-    $ValidSelection = (
-        $Selection -match '^\d+$' -and
-        [int]$Selection -ge 1 -and
-        [int]$Selection -le $WordDocuments.Count
-    )
-
-    if (-not $ValidSelection)
-    {
-        Write-Host ""
-        Write-Host "No document selected. Exiting." -ForegroundColor Yellow
-        return
-    }
-
-    $SelectedDocument = $WordDocuments[[int]$Selection - 1]
+    Write-Host "No document selected. Exiting." -ForegroundColor Yellow
+    break
 }
+
+$SelectedDocument = $RemainingDocuments[[int]$Selection - 1]
 
 Write-Host ""
 Write-Host "Selected document:" -NoNewline
@@ -571,8 +576,7 @@ Write-Host $AllBatesLookup.Count -ForegroundColor Green
 
 if ($AllBatesLookup.Count -eq 0)
 {
-    Write-Error "No Bates references found in the Word document. Cannot continue."
-    return
+    throw "No Bates references found in the Word document."
 }
 
 # --- Reconcile references with evidence files ---
@@ -706,8 +710,7 @@ else
 }
 catch
 {
-    Write-Host "Could not open or process the Word document." -ForegroundColor Red
-    Write-Host "Did you forget to close it before running the script?" -ForegroundColor Red
+    Write-Host "Could not finish processing this document." -ForegroundColor Red
     Write-Host "Error details: $($_.Exception.Message)" -ForegroundColor Red
 }
 finally
@@ -761,12 +764,11 @@ finally
         Write-Host "Word closed." -ForegroundColor Green
     }
 
-    # Errata files only reflect a run that actually produced hyperlinks.
+    # Merge this document's reconciliation into the run-wide totals.
     if ($TotalLinksAdded -gt 1)
     {
-        Write-ListingFile -Path $NoBatesPath -Items ($InvalidEvidenceFiles | Sort-Object)
-        Write-ListingFile -Path $NoReferencePath -Items $UnreferencedFiles
-        Write-ListingFile -Path $NoFilesPath -Items ($MissingFromFolder.Keys | Sort-Object)
+        foreach ($Bates in $MatchedBates) { $AllReferencedBates[$Bates] = $true }
+        foreach ($Bates in $MissingFromFolder.Keys) { $AllMissingBates[$Bates] = $true }
     }
 
     $TotalRuntime = (Get-Date) - $ScriptStart
@@ -774,4 +776,33 @@ finally
     Write-Host $TotalRuntime.ToString('hh\:mm\:ss') -ForegroundColor Green
 
     Write-ExecutionLog -FolderPath $LogFolder -HyperlinksCreated $TotalLinksAdded
+}
+
+$RemainingDocuments.Remove($SelectedDocument)
+
+if ($RemainingDocuments.Count -eq 0)
+{
+    break
+}
+
+}
+
+# --- Write errata files ---
+# Deduped across every document processed this run: a Bates ID only ends up in
+# _no_reference.txt if no processed document referenced it, and only ends up in
+# _no_files.txt if it was referenced but never matched to an evidence file.
+
+if ($AllReferencedBates.Count -gt 0 -or $AllMissingBates.Count -gt 0)
+{
+    $FinalUnreferencedFiles = foreach ($EvidenceID in ($EvidenceLookup.Keys | Sort-Object))
+    {
+        if (-not $AllReferencedBates.ContainsKey($EvidenceID))
+        {
+            $EvidenceLookup[$EvidenceID]
+        }
+    }
+
+    Write-ListingFile -Path $NoBatesPath -Items ($InvalidEvidenceFiles | Sort-Object)
+    Write-ListingFile -Path $NoReferencePath -Items $FinalUnreferencedFiles
+    Write-ListingFile -Path $NoFilesPath -Items ($AllMissingBates.Keys | Sort-Object)
 }
