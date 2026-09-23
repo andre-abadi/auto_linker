@@ -1,3 +1,10 @@
+# Auto-Linker Overview
+
+These PowerShell scripts automate links between document identifiers as references in Word and Excel files respectively, and the corresponding files in an accompanying folder.
+
+- `auto_linker_word.ps1` Word document bodies and footnotes, linking to matching files enumerated in a folder. `O(N^2)` at a high level.
+- `auto_linker_excel.ps1` Excel worksheet column, linking to matching files enumerated in a folder. `O(N)` at a high level.
+
 # Part 1: Word Document Auto-Linker
 
 `auto_linker_word.ps1` scans Word documents for Bates document IDs and creates hyperlinks to the matching evidence files. It is intended for a working directory containing:
@@ -6,7 +13,7 @@
 - Exactly one document source folder named `Evidence` or `Documents`.
 - Evidence filenames whose base names match Bates IDs, such as `AAA.111.222.333.txt` or `AAA.111.222.4444.txt`.
 
-The script checks the main document body and footnotes for Bates IDs in the format `AAA.111.222.333` *(TLA.3.3.3)* or `AAA.111.222.333` *(TLA.3.3.4)*. An optional suffix such as `-1` or `-12` is supported. It reports invalid filenames, reconciles document references with the evidence folder, and creates hyperlinks for every matching Bates ID. Word documents are saved only when at least one hyperlink is added.
+The script checks the main document body and footnotes for Bates identifiers in the format `AAA.111.222.333` *(TLA.3.3.3)* or `AAA.111.222.333` *(TLA.3.3.4)*. An optional suffix such as `-1` or `-12` is supported. It reports invalid filenames, reconciles document references with the evidence folder, and creates hyperlinks for every matching Bates identifier. Word documents are saved only when at least one hyperlink is added.
 
 ## Word prerequisites
 
@@ -48,7 +55,7 @@ At a high level, the script has three main costs:
 
 - Evidence indexing is approximately linear in the number of evidence files, `O(E)`.
 - Bates scanning is approximately linear in the amount of text in each Word document, `O(T)`.
-- Hyperlinking is the main bottleneck. For each distinct matched Bates ID, Word searches the document body and footnotes again. In the worst case this behaves like `O(B x T)`, where `B` is the number of distinct matched Bates IDs and `T` is the document text size.
+- Hyperlinking is the main bottleneck. For each distinct matched Bates ID, Word searches the document body and footnotes again. At a high level, this can be summarized as `O(N^2)`. More precisely, the worst case behaves like `O(B x T)`, where `B` is the number of distinct matched Bates IDs and `T` is the document text size.
 
 This repeated search can look quadratic when the number of Bates IDs and the document size grow together. The dominant practical cost is Word COM automation and inserting hyperlinks, not the PowerShell hashtables used for lookups. Multiple large documents multiply these costs across the run.
 
