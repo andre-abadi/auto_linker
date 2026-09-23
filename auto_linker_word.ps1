@@ -802,7 +802,32 @@ if ($AllReferencedBates.Count -gt 0 -or $AllMissingBates.Count -gt 0)
         }
     }
 
+    $InvalidEvidenceCount = $InvalidEvidenceFiles.Count
+    $UnreferencedCount = $FinalUnreferencedFiles.Count
+    $MissingCount = $AllMissingBates.Count
+
     Write-ListingFile -Path $NoBatesPath -Items ($InvalidEvidenceFiles | Sort-Object)
     Write-ListingFile -Path $NoReferencePath -Items $FinalUnreferencedFiles
     Write-ListingFile -Path $NoFilesPath -Items ($AllMissingBates.Keys | Sort-Object)
+
+    Write-Host ""
+    Write-Host "Errata files written."
+
+    Write-Host "    $(Split-Path -Path $NoBatesPath -Leaf) : " -NoNewline
+    Write-Host $InvalidEvidenceCount -ForegroundColor Yellow -NoNewline
+    Write-Host " item(s)"
+
+    Write-Host "    $(Split-Path -Path $NoReferencePath -Leaf) : " -NoNewline
+    Write-Host $UnreferencedCount -ForegroundColor Yellow -NoNewline
+    Write-Host " item(s)"
+
+    Write-Host "    $(Split-Path -Path $NoFilesPath -Leaf) : " -NoNewline
+    Write-Host $MissingCount -ForegroundColor Yellow -NoNewline
+    Write-Host " item(s)"
+    Write-Host ""
+}
+else
+{
+    Write-Host ""
+    Write-Host "No errata files were created." -ForegroundColor Yellow
 }
