@@ -308,14 +308,16 @@ $NoFilesPath = Join-Path $CurrentDir "_no_files.txt"
 if ($DuplicateFileLookup.Count -gt 0) {
     $UnreferencedFiles = @($DuplicateFileLookup.Values | Sort-Object)
     Set-Content -LiteralPath $NoReferencePath -Value $UnreferencedFiles
-    Write-Host "Unreferenced source files saved to $(Split-Path $NoReferencePath -Leaf)"
+    Write-Host "Unreferenced source files saved to $(Split-Path $NoReferencePath -Leaf) " -NoNewline
+    Write-Host "($($UnreferencedFiles.Count))" -ForegroundColor Yellow
 } else {
     Write-Host "No unreferenced source files found."
 }
 
 if ($MissingFiles.Count -gt 0) {
     $MissingFiles | Sort-Object | Set-Content -LiteralPath $NoFilesPath
-    Write-Host "Missing Excel document IDs saved to $(Split-Path $NoFilesPath -Leaf)"
+    Write-Host "Missing Excel document IDs saved to $(Split-Path $NoFilesPath -Leaf) " -NoNewline
+    Write-Host "($($MissingFiles.Count))" -ForegroundColor Yellow
 } else {
     Write-Host "No missing source files found."
 }
