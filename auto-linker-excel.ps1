@@ -9,39 +9,27 @@ This script:
 - Reports total execution time and hyperlinks created
 #>
 
-<#
-Changes:
-- V14
-  - Errata filename only output not whole path.
-  - Log file .log --> .txt
-  - Errate filename prefixed with auto_linker
-- V13
-  - Fixed column header searching.
-  - Callout found column header and first row to check.
-- V11
-  - Folder agnostic, no name requirement just that there's only one.
-  - Document ID columns can have words after Document ID and still be included.
-  - Declare column header in case of changing away from Document ID.
-  - Add transcript logging.
-#>
-
 #
 # Start Global Variables
 #
 # maximum number of UsedRange rows to scan for the header
 $header_search_rows = 5
-# write-host for every x files enumerated and links created
-$callout_interval = 10 
+# write-host for every x links created
+$callout_interval = 50 
 # possible column headers to look for
 $hyperlink_column_headers = @("Document ID", "Document Identifier")
 # set true to show Excel while running
 $excel_visible = $false
+# set true to generate a transcript log file
+$enable_log_file = $false
 #
 # End Global Variables
 #
 
 $scriptStartTime = Get-Date
-Start-Transcript -Path ("auto_linker_log_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")  | Out-Null
+if ($enable_log_file) {
+    Start-Transcript -Path ("auto_linker_log_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt") | Out-Null
+}
 
 # Select an Excel file from the current directory.
 $CurrentDir = (Get-Location).Path
@@ -49,7 +37,7 @@ $ExcelFiles = @(Get-ChildItem -LiteralPath $CurrentDir -Filter "*.xlsx" -File | 
 
 if ($ExcelFiles.Count -eq 0) {
     Write-Host "No Excel files found in the current directory. Exiting."
-    Stop-Transcript | Out-Null
+    if ($enable_log_file) { Stop-Transcript | Out-Null }
     return
 }
 
@@ -62,7 +50,7 @@ while ($true) {
     $Selection = Read-Host "Select a workbook by number (blank or 0 to exit)"
     if ([string]::IsNullOrWhiteSpace($Selection) -or $Selection.Trim() -eq "0") {
         Write-Host "No Excel file selected. Exiting."
-        Stop-Transcript | Out-Null
+        if ($enable_log_file) { Stop-Transcript | Out-Null }
         return
     }
 
@@ -99,19 +87,11 @@ Write-Host "`nEnumerating files in '$(Split-Path $DocFolder -Leaf)'."
 $Files = Get-ChildItem -Path $DocFolder -File
 
 $TotalFiles = $Files.Count
-$FileCounter = 0
 
 # Create a hashtable for quick lookup of files by identifier
 $FileLookup = @{}
 $DuplicateFileLookup = @{} # Create duplicate file listing
 foreach ($File in $Files) {
-    $FileCounter++
-    if ($FileCounter % $callout_interval -eq 0) {
-        Write-Host "    $FileCounter files enumerated."
-        [System.GC]::Collect()
-        [System.GC]::WaitForPendingFinalizers()
-    }
-
     # Extract the filename without extension
     $DocID = $File.BaseName.Trim().ToUpper()
     if (-not $FileLookup.ContainsKey($DocID)) {
@@ -346,7 +326,7 @@ $scriptDuration = (Get-Date) - $scriptStartTime
 Write-Host "Total execution time: $($scriptDuration.ToString('hh\:mm\:ss'))`n"
 
 # Stop logging
-Stop-Transcript | Out-Null
+if ($enable_log_file) { Stop-Transcript | Out-Null }
 
 # Pause before exit
 Write-Host "Press ENTER to exit."
