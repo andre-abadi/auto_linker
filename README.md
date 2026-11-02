@@ -105,13 +105,15 @@ This script streamlines document management by automatically creating hyperlinks
 4. The script will:
    - Process all visible worksheets
    - Create hyperlinks for matching Document IDs
-   - Generate an errata file if any documents are missing or unmatched
+   - Write `_no_reference.txt` when source files are not referenced in Excel
+   - Write `_no_files.txt` when Excel document IDs have no matching source file
    - Create a log file of the execution
 
 ## Output
 
 - Updated Excel file with hyperlinks
-- Errata file (if needed) listing missing or extra documents
+- `_no_reference.txt` (only when source files are unreferenced)
+- `_no_files.txt` (only when Excel document IDs have no matching source file)
 - Execution log file with detailed processing information
 
 ## Notes

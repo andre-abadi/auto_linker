@@ -5,7 +5,7 @@ This script:
 - Detects Document ID column in first 3 rows of each worksheet
 - Creates hyperlinks between Document IDs and their files
 - Displays progress for long-running operations
-- Generates errata file listing missing/extra documents
+- Generates separate errata files for unreferenced and missing documents
 - Reports total execution time and hyperlinks created
 #>
 
@@ -28,10 +28,12 @@ Changes:
 #
 # Start Global Variables
 #
+# maximum number of UsedRange rows to scan for the header
+$header_search_rows = 5
 # write-host for every x files enumerated and links created
-$callout_interval = 5000 
-# string to look for to link
-$hyperlink_column_header = "Document ID"
+$callout_interval = 10 
+# possible column headers to look for
+$hyperlink_column_headers = @("Document ID", "Document Identifier")
 # set true to show Excel while running
 $excel_visible = $false
 #
@@ -146,6 +148,9 @@ Write-Host "`nOpening Excel File"
 $Workbook = $Excel.Workbooks.Open($ExcelFilePath)
 
 try {
+    # Build the matching pattern from the editable header list.
+    $HyperlinkColumnHeaderPattern = "^\s*(?:" + (($hyperlink_column_headers | ForEach-Object { [regex]::Escape($_) }) -join "|") + ")\b"
+
     # Get the count of worksheets
     $WorksheetCount = $Workbook.Worksheets.Count
 
@@ -164,21 +169,28 @@ try {
         Write-Host "    " -NoNewline
         Write-Host $Worksheet.Name -ForegroundColor Magenta -NoNewline
         Write-Host " worksheet found."
-        # Find the identifier column in the first three rows
+        # Find the identifier column in the configured number of rows
         $DocIDColumn = $null
         $HeaderRow = $null  # Track which row contains the header
         $FoundHeader = $false
 
-        for ($Row = 1; $Row -le 3; $Row++) {
+        for ($Row = 1; $Row -le $header_search_rows; $Row++) {
             $UsedRange = $Worksheet.UsedRange
             $Rows = $UsedRange.Rows
+            if ($Row -gt $Rows.Count) {
+                [System.Runtime.InteropServices.Marshal]::ReleaseComObject($Rows) | Out-Null
+                $Rows = $null
+                [System.Runtime.InteropServices.Marshal]::ReleaseComObject($UsedRange) | Out-Null
+                $UsedRange = $null
+                break
+            }
             $RowRange = $Rows.Item($Row)
             $Columns = $RowRange.Columns
 
             $ColumnCount = $Columns.Count
             for ($Col = 1; $Col -le $ColumnCount; $Col++) {
                 $Cell = $Columns.Item($Col)
-                if ($Cell.Text -match "^\s*$hyperlink_column_header\b") {
+                if ($Cell.Text -match $HyperlinkColumnHeaderPattern) {
                     $DocIDColumn = $Cell.Column
                     $HeaderRow = $Row    # Store which row contains the header
                     $FoundHeader = $true
@@ -230,7 +242,7 @@ try {
             $headerCell = $null
             $firstValueCell = $null
         }
-        #Write-Host "    Found $hyperlink_column_header header at column $DocIDColumn."
+        #Write-Host "    Found a configured document ID header at column $DocIDColumn."
         Write-Host "        Starting hyperlinking."
 
         # Get the used range starting from the row after the header
@@ -310,31 +322,22 @@ Write-Host "Total hyperlinks created across all worksheets: " -NoNewline
 Write-Host $TotalHyperlinksAdded -ForegroundColor Green
 
 
-if ($DuplicateFileLookup.Keys.Count -gt 0 -or $MissingFiles.Count -gt 0) {
-    # Create errata file with timestamp
-    $ErrataFilePath = Join-Path $CurrentDir ("auto_linker_errata_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
-    
-    # Output extraneous files if they exist
-    if ($DuplicateFileLookup.Keys.Count -gt 0) {
-        Add-Content -Path $ErrataFilePath -Value "Extraneous Files:"
-        foreach ($ExtraFile in $DuplicateFileLookup.Keys) {
-            Add-Content -Path $ErrataFilePath -Value $DuplicateFileLookup[$ExtraFile]
-        }
-    }
-    
-    # Output missing files if they exist
-    if ($MissingFiles.Count -gt 0) {
-        Add-Content -Path $ErrataFilePath -Value "`nMissing Files:"
-        foreach ($MissingFile in $MissingFiles) {
-            Add-Content -Path $ErrataFilePath -Value $MissingFile
-        }
-    }
-    
-    # Output confirmation message to console
-    $ErrataFileName = Split-Path $ErrataFilePath -Leaf
-    Write-Host "Errata saved to $ErrataFileName"
+$NoReferencePath = Join-Path $CurrentDir "_no_reference.txt"
+$NoFilesPath = Join-Path $CurrentDir "_no_files.txt"
+
+if ($DuplicateFileLookup.Count -gt 0) {
+    $UnreferencedFiles = @($DuplicateFileLookup.Values | Sort-Object)
+    Set-Content -LiteralPath $NoReferencePath -Value $UnreferencedFiles
+    Write-Host "Unreferenced source files saved to $(Split-Path $NoReferencePath -Leaf)"
 } else {
-    Write-Host "No errata file needed - all identifiers were processed successfully!"
+    Write-Host "No unreferenced source files found."
+}
+
+if ($MissingFiles.Count -gt 0) {
+    $MissingFiles | Sort-Object | Set-Content -LiteralPath $NoFilesPath
+    Write-Host "Missing Excel document IDs saved to $(Split-Path $NoFilesPath -Leaf)"
+} else {
+    Write-Host "No missing source files found."
 }
 
 
