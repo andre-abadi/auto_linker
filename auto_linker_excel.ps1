@@ -1,7 +1,7 @@
 <#
 This script:
-- Processes a single Excel file in the current directory
-- Searches for a single folder containing corresponding files
+- Prompts for an Excel file
+- Uses the Evidence folder, or Documents if Evidence is not present
 - Detects Document ID column in first 3 rows of each worksheet
 - Creates hyperlinks between Document IDs and their files
 - Displays progress for long-running operations
@@ -41,29 +41,54 @@ $excel_visible = $false
 $scriptStartTime = Get-Date
 Start-Transcript -Path ("auto_linker_log_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")  | Out-Null
 
-# Load the necessary assemblies for Excel automation
-Add-Type -AssemblyName Microsoft.Office.Interop.Excel
-
-# Set the current directory path as a string
+# Select an Excel file from the current directory.
 $CurrentDir = (Get-Location).Path
+$ExcelFiles = @(Get-ChildItem -LiteralPath $CurrentDir -Filter "*.xlsx" -File | Sort-Object Name)
 
-# Find the Excel file in the current directory
-$ExcelFiles = Get-ChildItem -Path $CurrentDir -Filter *.xlsx
-
-if ($ExcelFiles.Count -ne 1) {
-    Write-Error "Exiting because there should be exactly one Excel file in the current directory and this condition was not met."
-    exit 1
+if ($ExcelFiles.Count -eq 0) {
+    Write-Host "No Excel files found in the current directory. Exiting."
+    Stop-Transcript | Out-Null
+    return
 }
 
-$ExcelFilePath = $ExcelFiles[0].FullName
+Write-Host "`nExcel files in the current directory:"
+for ($Index = 0; $Index -lt $ExcelFiles.Count; $Index++) {
+    Write-Host "[$($Index + 1)] $($ExcelFiles[$Index].Name)"
+}
 
-# Find the single subfolder in the current directory
-$Folders = Get-ChildItem -Path $CurrentDir -Directory
-if ($Folders.Count -ne 1) {
-    Write-Error "Exiting because there should be exactly one folder in the current directory and this condition was not met."
+while ($true) {
+    $Selection = Read-Host "Select a workbook by number (blank or 0 to exit)"
+    if ([string]::IsNullOrWhiteSpace($Selection) -or $Selection.Trim() -eq "0") {
+        Write-Host "No Excel file selected. Exiting."
+        Stop-Transcript | Out-Null
+        return
+    }
+
+    [int]$SelectionNumber = 0
+    if ([int]::TryParse($Selection.Trim(), [ref]$SelectionNumber) -and
+        $SelectionNumber -ge 1 -and $SelectionNumber -le $ExcelFiles.Count) {
+        break
+    }
+
+    Write-Host "Enter a number from 1 to $($ExcelFiles.Count), or blank/0 to exit."
+}
+
+$ExcelFilePath = $ExcelFiles[$SelectionNumber - 1].FullName
+
+# Prefer Evidence; use Documents only when Evidence is absent.
+$DocFolder = $null
+foreach ($FolderName in @("Evidence", "Documents")) {
+    $CandidateFolder = Join-Path $CurrentDir $FolderName
+    if (Test-Path -LiteralPath $CandidateFolder -PathType Container) {
+        $DocFolder = (Get-Item -LiteralPath $CandidateFolder).FullName
+        break
+    }
+}
+
+if (-not $DocFolder) {
+    Write-Error "Exiting because neither an 'Evidence' nor a 'Documents' folder was found beside the selected Excel file."
     exit 1
 }
-$DocFolder = $Folders[0].FullName
 
 $enumStart = Get-Date
 

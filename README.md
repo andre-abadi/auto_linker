@@ -93,17 +93,16 @@ This script streamlines document management by automatically creating hyperlinks
 
 - Windows environment with PowerShell
 - Microsoft Excel installed
-- Single Excel file (.xlsx) in the working directory
-- Single folder containing the documents to be linked
+- One or more Excel workbooks (.xlsx) in the working directory
+- An `Evidence` or `Documents` folder in the working directory (`Evidence` is used when both exist)
 - Document IDs in Excel must match filenames (without extensions)
 
 ## Usage
 
-1. Place the script in a directory containing:
-   - One Excel file (.xlsx)
-   - One folder containing the documents to be linked
-2. Run the script in PowerShell
-3. The script will:
+1. Run the script in PowerShell.
+2. Select an Excel workbook by its number in the console. Enter blank or `0` to exit without processing.
+3. Keep the document source folder in the working directory. The script uses `Evidence` if present, otherwise `Documents`; other folders are ignored.
+4. The script will:
    - Process all visible worksheets
    - Create hyperlinks for matching Document IDs
    - Generate an errata file if any documents are missing or unmatched
